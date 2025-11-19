@@ -27,20 +27,11 @@ model:
     # Multi-crop settings
     global_crops_scale: [0.32, 1.0]
     local_crops_scale: [0.05, 0.32]
-    local_crops_number: 10
+    local_crops_number: 1
 
     # Koleo regularization
     use_koleo: true
     koleo_loss_weight: 0.1
 
-    # iBOT loss (optional in DINOv2)
-    use_ibot_loss: false
-    ibot_loss_weight: 1.0
-    pred_ratio: 0.3
-
   # Pretrained weights
   pretrained: null
-
-
-
-

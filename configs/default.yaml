@@ -1,6 +1,6 @@
 # Default configuration
 defaults:
-  - model: ibot_small
+  - model: dino_v2
   - data: fall2025_deeplearning  # Main competition dataset
   - optimizer: adamw
   - scheduler: cosine
@@ -13,19 +13,19 @@ seed: 42
 # Training settings
 training:
   num_epochs: 200
-  batch_size: 512
-  num_workers: 12
+  batch_size: 1
+  num_workers: 1
   pin_memory: true
   gradient_accumulation_steps: 1
   mixed_precision: true
   gradient_clip: 3.0
-  prefetch_factor: 6  # Prefetch more batches (2x default) to keep GPU fed
+  prefetch_factor: 2  # Prefetch more batches (2x default) to keep GPU fed
   persistent_workers: true  # Keep workers alive between epochs
 
 # Checkpointing
 checkpoint:
-  save_dir: /scratch/dl5635/checkpoints  # Base directory (experiment_name is appended)
-  save_frequency: 10
+  save_dir: /gpfs/scratch/dl5635/checkpoints  # Base directory (experiment_name is appended)
+  save_frequency: 5 # every n epochs
   resume_from: null  # Set to "auto" to auto-resume, or path for specific checkpoint
   auto_resume: true  # Automatically resume from latest checkpoint if exists
 
@@ -36,7 +36,7 @@ logging:
 
 # Evaluation
 evaluation:
-  checkpoint_path: /scratch/dl5635/checkpoints/checkpoint_final.pth
+  checkpoint_path: /gpfs/scratch/dl5635/checkpoints/checkpoint_final.pth
   eval_dataset: cifar100  # Dataset to evaluate on
   eval_image_key: img  # 'img' for CIFAR, 'image' for most others
   batch_size: 256

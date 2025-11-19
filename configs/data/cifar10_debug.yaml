@@ -5,7 +5,7 @@ data:
   dataset_name: cifar10
   dataset_config: null
   streaming: false
-  cache_dir: /scratch/dl5635/.cache
+  cache_dir: /gpfs/scratch/dl5635/.cache
   num_samples: 10000  # Use subset for quick testing (out of 50K train)
 
   # Image preprocessing

@@ -1,12 +1,8 @@
 """
-Main training script for self-supervised learning (IBOT/DINO)
+Main training script for self-supervised learning (DINO)
 """
-import os
-import sys
 import torch
 import torch.nn as nn
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from pathlib import Path
@@ -15,16 +11,11 @@ import numpy as np
 
 from data_loader import create_dataloader, get_transforms
 from models import (
-    create_ibot_model,
     create_dino_model,
     update_teacher,
     DINOLoss,
 )
 from utils import (
-    setup_distributed,
-    cleanup_distributed,
-    save_checkpoint,
-    load_checkpoint,
     get_cosine_schedule_with_warmup,
     AverageMeter,
 )
@@ -37,18 +28,10 @@ class Trainer:
     def __init__(self, cfg: DictConfig):
         self.cfg = cfg
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.global_rank = int(os.environ.get('RANK', 0))
-        self.local_rank = int(os.environ.get('LOCAL_RANK', 0))
-        self.world_size = int(os.environ.get('WORLD_SIZE', 1))
-
-        # Setup distributed training
-        if self.world_size > 1:
-            setup_distributed()
-            self.device = torch.device(f'cuda:{self.local_rank}')
 
         # Set random seed
-        torch.manual_seed(cfg.seed + self.global_rank)
-        np.random.seed(cfg.seed + self.global_rank)
+        torch.manual_seed(cfg.seed)
+        np.random.seed(cfg.seed)
 
         # Create models
         self.create_models()
@@ -83,23 +66,13 @@ class Trainer:
         """Create student and teacher models"""
         model_name = self.cfg.model.name
 
-        if model_name == 'ibot':
-            self.student, self.teacher = create_ibot_model(self.cfg)
-        elif model_name == 'dino_v2' or model_name == 'dino_v3':
+        if model_name in ['dino_v2', 'dino_v3']:
             self.student, self.teacher = create_dino_model(self.cfg)
         else:
             raise ValueError(f"Unknown model: {model_name}")
 
         self.student = self.student.to(self.device)
         self.teacher = self.teacher.to(self.device)
-
-        # Wrap with DDP
-        if self.world_size > 1:
-            self.student = DDP(
-                self.student,
-                device_ids=[self.local_rank],
-                output_device=self.local_rank,
-            )
 
     def create_dataloaders(self):
         """Create data loaders"""
@@ -148,12 +121,7 @@ class Trainer:
 
     def create_loss(self):
         """Create loss function"""
-        model_name = self.cfg.model.name
-
-        if model_name == 'ibot':
-            model_cfg = self.cfg.model.ibot
-        else:  # dino_v2 or dino_v3
-            model_cfg = self.cfg.model.dino
+        model_cfg = self.cfg.model.dino
 
         self.criterion = DINOLoss(
             out_dim=model_cfg.out_dim,
@@ -168,9 +136,8 @@ class Trainer:
     def setup_logging(self):
         """Setup logging"""
         # Simple console logging - logs are captured by SLURM
-        if self.global_rank == 0:
-            print(f"Experiment: {self.cfg.experiment_name}")
-            print(f"Log directory: {self.cfg.logging.log_dir}")
+        print(f"Experiment: {self.cfg.experiment_name}")
+        print(f"Log directory: {self.cfg.logging.log_dir}")
 
     def train_epoch(self):
         """Train for one epoch"""
@@ -182,20 +149,9 @@ class Trainer:
         pbar = tqdm(
             self.train_loader,
             desc=f"Epoch {self.epoch}",
-            disable=self.global_rank != 0,
         )
 
         for batch_idx, (images, _) in enumerate(pbar):
-            # Debug: print image structure on first batch
-            if batch_idx == 0 and self.global_rank == 0:
-                print(f"\n[DEBUG TRAIN] Images type: {type(images)}")
-                if isinstance(images, list):
-                    print(f"[DEBUG TRAIN] Number of crops: {len(images)}")
-                    print(f"[DEBUG TRAIN] First crop shape: {images[0].shape}")
-                else:
-                    print(f"[DEBUG TRAIN] Images shape (not a list): {images.shape}")
-                    print(f"[DEBUG TRAIN] ERROR: Expected list of crops, got tensor!")
-
             # Images should be a list of crops
             # If it's a tensor, something went wrong with the collate function
             if not isinstance(images, list):
@@ -246,29 +202,22 @@ class Trainer:
             self.scheduler.step()
 
             # Update teacher
-            model_name = self.cfg.model.name
-            if model_name == 'ibot':
-                momentum = self.cfg.model.ibot.momentum_teacher
-            else:
-                momentum = self.cfg.model.dino.momentum_teacher
+            momentum = self.cfg.model.dino.momentum_teacher
 
             with torch.no_grad():
-                m = momentum
-                student_model = self.student.module if self.world_size > 1 else self.student
-                update_teacher(student_model, self.teacher, m)
+                update_teacher(self.student, self.teacher, momentum)
 
             # Update metrics
             loss_meter.update(loss.item())
 
             # Logging
-            if self.global_rank == 0:
-                pbar.set_postfix({
-                    'loss': f'{loss_meter.avg:.4f}',
-                    'lr': f'{self.scheduler.get_last_lr()[0]:.6f}',
-                })
+            pbar.set_postfix({
+                'loss': f'{loss_meter.avg:.4f}',
+                'lr': f'{self.scheduler.get_last_lr()[0]:.6f}',
+            })
 
-                if self.global_step % self.cfg.logging.log_frequency == 0:
-                    print(f"Step {self.global_step} - Loss: {loss_meter.avg:.4f}, LR: {self.scheduler.get_last_lr()[0]:.6f}")
+            if self.global_step % self.cfg.logging.log_frequency == 0:
+                print(f"Step {self.global_step} - Loss: {loss_meter.avg:.4f}, LR: {self.scheduler.get_last_lr()[0]:.6f}")
 
             self.global_step += 1
 
@@ -280,8 +229,7 @@ class Trainer:
 
         # Case 1: Explicit checkpoint path provided
         if resume_path and resume_path != "auto" and Path(resume_path).exists():
-            if self.global_rank == 0:
-                print(f"📂 Resuming from explicit checkpoint: {resume_path}")
+            print(f"📂 Resuming from explicit checkpoint: {resume_path}")
             self.load_checkpoint(resume_path)
             return
 
@@ -289,15 +237,13 @@ class Trainer:
         if self.cfg.checkpoint.auto_resume or resume_path == "auto":
             latest_checkpoint = self._find_latest_checkpoint()
             if latest_checkpoint:
-                if self.global_rank == 0:
-                    print(f"🔄 Auto-resuming from: {latest_checkpoint}")
+                print(f"🔄 Auto-resuming from: {latest_checkpoint}")
                 self.load_checkpoint(latest_checkpoint)
                 return
 
         # Case 3: Starting fresh
-        if self.global_rank == 0:
-            print(f"🆕 Starting new experiment: {self.cfg.experiment_name}")
-            print(f"📁 Checkpoints will be saved to: {self.checkpoint_dir}")
+        print(f"🆕 Starting new experiment: {self.cfg.experiment_name}")
+        print(f"📁 Checkpoints will be saved to: {self.checkpoint_dir}")
 
     def _find_latest_checkpoint(self):
         """Find the latest checkpoint in the experiment directory"""
@@ -318,16 +264,15 @@ class Trainer:
 
     def train(self):
         """Main training loop"""
-        if self.global_rank == 0:
-            print(f"\n{'='*80}")
-            print(f"Training Configuration")
-            print(f"{'='*80}")
-            print(f"Experiment: {self.cfg.experiment_name}")
-            print(f"Starting epoch: {self.epoch}")
-            print(f"Target epochs: {self.cfg.training.num_epochs}")
-            print(f"Checkpoint dir: {self.checkpoint_dir}")
-            print(f"GPUs: {self.world_size}")
-            print(f"{'='*80}\n")
+        print(f"\n{'='*80}")
+        print(f"Training Configuration")
+        print(f"{'='*80}")
+        print(f"Experiment: {self.cfg.experiment_name}")
+        print(f"Starting epoch: {self.epoch}")
+        print(f"Target epochs: {self.cfg.training.num_epochs}")
+        print(f"Checkpoint dir: {self.checkpoint_dir}")
+        print(f"Device: {self.device}")
+        print(f"{'='*80}\n")
 
         for epoch in range(self.epoch, self.cfg.training.num_epochs):
             self.epoch = epoch
@@ -336,30 +281,22 @@ class Trainer:
             avg_loss = self.train_epoch()
 
             # Save checkpoint
-            if (self.global_rank == 0 and
-                epoch % self.cfg.checkpoint.save_frequency == 0):
+            if epoch % self.cfg.checkpoint.save_frequency == 0:
                 self.save_checkpoint(f'checkpoint_epoch_{epoch}.pth')
 
             print(f"Epoch {epoch}: Loss = {avg_loss:.4f}")
 
         # Save final checkpoint
-        if self.global_rank == 0:
-            self.save_checkpoint('checkpoint_final.pth')
-
-        # Cleanup
-        if self.world_size > 1:
-            cleanup_distributed()
+        self.save_checkpoint('checkpoint_final.pth')
 
         print("Training completed!")
 
     def save_checkpoint(self, filename):
         """Save training checkpoint"""
-        student_model = self.student.module if self.world_size > 1 else self.student
-
         checkpoint = {
             'epoch': self.epoch,
             'global_step': self.global_step,
-            'student_state_dict': student_model.state_dict(),
+            'student_state_dict': self.student.state_dict(),
             'teacher_state_dict': self.teacher.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
@@ -377,8 +314,7 @@ class Trainer:
         """Load training checkpoint"""
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
-        student_model = self.student.module if self.world_size > 1 else self.student
-        student_model.load_state_dict(checkpoint['student_state_dict'])
+        self.student.load_state_dict(checkpoint['student_state_dict'])
         self.teacher.load_state_dict(checkpoint['teacher_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])

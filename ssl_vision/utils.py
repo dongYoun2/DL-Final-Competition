@@ -1,71 +1,9 @@
 """
 Utility functions for training
 """
-import os
 import torch
-import torch.distributed as dist
 from torch.optim.lr_scheduler import LambdaLR
 import math
-
-
-def setup_distributed():
-    """
-    Setup distributed training
-    """
-    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-        rank = int(os.environ['RANK'])
-        world_size = int(os.environ['WORLD_SIZE'])
-        local_rank = int(os.environ['LOCAL_RANK'])
-    else:
-        rank = 0
-        world_size = 1
-        local_rank = 0
-
-    if world_size > 1:
-        torch.cuda.set_device(local_rank)
-        dist.init_process_group(
-            backend='nccl',
-            init_method='env://',
-            world_size=world_size,
-            rank=rank,
-        )
-        dist.barrier()
-
-    return rank, world_size, local_rank
-
-
-def cleanup_distributed():
-    """
-    Cleanup distributed training
-    """
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
-def save_checkpoint(state, filename):
-    """
-    Save checkpoint
-    """
-    torch.save(state, filename)
-
-
-def load_checkpoint(filename, model, optimizer=None, scheduler=None):
-    """
-    Load checkpoint
-    """
-    checkpoint = torch.load(filename, map_location='cpu')
-
-    model.load_state_dict(checkpoint['model_state_dict'])
-
-    if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-    if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-
-    epoch = checkpoint.get('epoch', 0)
-
-    return epoch
 
 
 def get_cosine_schedule_with_warmup(

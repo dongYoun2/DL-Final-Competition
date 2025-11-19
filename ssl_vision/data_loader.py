@@ -13,7 +13,7 @@ import random
 
 class MultiCropTransform:
     """
-    Multi-crop augmentation for self-supervised learning (IBOT/DINO)
+    Multi-crop augmentation for self-supervised learning (DINO)
     """
     def __init__(
         self,
@@ -185,18 +185,6 @@ class HuggingFaceImageDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-            # Debug first sample only
-            if not hasattr(HuggingFaceImageDataset, '_debug_printed') and idx == 0:
-                print(f"\n[DEBUG DATASET] After transform:")
-                print(f"[DEBUG DATASET] Type: {type(image)}")
-                if isinstance(image, list):
-                    print(f"[DEBUG DATASET] List length: {len(image)}")
-                    if len(image) > 0 and hasattr(image[0], 'shape'):
-                        print(f"[DEBUG DATASET] First element shape: {image[0].shape}")
-                else:
-                    print(f"[DEBUG DATASET] Shape: {image.shape if hasattr(image, 'shape') else 'no shape'}")
-                HuggingFaceImageDataset._debug_printed = True
-
         # Get label if available (for evaluation), otherwise return index
         if 'label' in item:
             label = item['label']
@@ -214,29 +202,6 @@ def collate_fn(batch):
     Handles the case where each sample returns a list of crops.
     """
     try:
-        # Debug: print batch structure (only first time)
-        if not hasattr(collate_fn, '_debug_printed'):
-            print(f"\n[DEBUG COLLATE] Function called")
-            print(f"[DEBUG COLLATE] Batch length: {len(batch)}")
-            print(f"[DEBUG COLLATE] First item type: {type(batch[0])}")
-            print(f"[DEBUG COLLATE] First item length: {len(batch[0]) if isinstance(batch[0], (list, tuple)) else 'N/A'}")
-            print(f"[DEBUG COLLATE] First item[0] type: {type(batch[0][0])}")
-
-            if isinstance(batch[0][0], list):
-                print(f"[DEBUG COLLATE] First item[0] IS a list with {len(batch[0][0])} elements")
-                if len(batch[0][0]) > 0:
-                    print(f"[DEBUG COLLATE] First crop type: {type(batch[0][0][0])}")
-                    if hasattr(batch[0][0][0], 'shape'):
-                        print(f"[DEBUG COLLATE] First crop shape: {batch[0][0][0].shape}")
-            else:
-                print(f"[DEBUG COLLATE] First item[0] is NOT a list")
-                if hasattr(batch[0][0], 'shape'):
-                    print(f"[DEBUG COLLATE] First item[0] shape: {batch[0][0].shape}")
-                else:
-                    print(f"[DEBUG COLLATE] First item[0] value: {batch[0][0]}")
-
-            collate_fn._debug_printed = True
-
         # Check if the first image is a list of crops or a single tensor
         first_img = batch[0][0]
 
@@ -254,24 +219,12 @@ def collate_fn(batch):
                 crops_batched.append(crop_batch)
 
             labels = torch.tensor([item[1] for item in batch])
-
-            if not hasattr(collate_fn, '_debug_printed2'):
-                print(f"[DEBUG COLLATE] Multi-crop case: Returning {len(crops_batched)} crop batches")
-                print(f"[DEBUG COLLATE] Each crop batch shape: {crops_batched[0].shape}")
-                collate_fn._debug_printed2 = True
-
             return crops_batched, labels
         else:
             # Single image case: wrap in list to maintain consistency
             # This ensures train.py always receives a list
             images = [torch.stack([item[0] for item in batch])]
             labels = torch.tensor([item[1] for item in batch])
-
-            if not hasattr(collate_fn, '_debug_printed2'):
-                print(f"[DEBUG COLLATE] Single image case: wrapping in list")
-                print(f"[DEBUG COLLATE] Returning list with 1 element of shape {images[0].shape}")
-                collate_fn._debug_printed2 = True
-
             return images, labels
 
     except Exception as e:
@@ -332,7 +285,7 @@ def get_transforms(cfg):
     """
     model_name = cfg.model.name
 
-    if model_name in ['ibot', 'dino_v2', 'dino_v3']:
+    if model_name in ['dino_v2', 'dino_v3']:
         # Multi-crop transformation for self-supervised learning
         transform = MultiCropTransform(
             global_crops_scale=tuple(cfg.model[cfg.model.name.replace('_v2', '').replace('_v3', '')].global_crops_scale),
@@ -348,7 +301,3 @@ def get_transforms(cfg):
         raise ValueError(f"Unknown model: {model_name}")
 
     return transform
-
-
-
-
