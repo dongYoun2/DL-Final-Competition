@@ -37,6 +37,7 @@ env/
 
 # Data and cache
 data/
+!configs/data/
 *.csv
 *.h5
 *.hdf5

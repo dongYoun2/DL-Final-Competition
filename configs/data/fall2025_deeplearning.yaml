@@ -1,0 +1,25 @@
+# @package _global_
+# Main competition dataset - 500K images from tsbpp/fall2025_deeplearning
+data:
+  dataset_name: tsbpp/fall2025_deeplearning
+  dataset_config: null
+  streaming: false
+  cache_dir: /scratch/dl5635/.cache
+  num_samples: null  # Use all samples (500K)
+
+  # Image preprocessing
+  image_size: 96  # Native resolution 96x96 - DO NOT CHANGE per competition rules
+  image_key: image
+
+  # Data splits
+  train_split: train
+  val_split: null  # No validation split in this dataset
+
+  # Data augmentation for SSL
+  augmentation:
+    color_jitter: 0.4
+    grayscale_prob: 0.2
+    gaussian_blur_prob: 0.5
+    solarization_prob: 0.2
+    horizontal_flip_prob: 0.5
+
