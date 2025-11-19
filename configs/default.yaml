@@ -1,0 +1,52 @@
+# Default configuration
+defaults:
+  - model: ibot_small
+  - data: fall2025_deeplearning  # Main competition dataset
+  - optimizer: adamw
+  - scheduler: cosine
+  - _self_
+
+# Experiment settings
+experiment_name: ssl_vision_training
+seed: 42
+
+# Training settings
+training:
+  num_epochs: 200
+  batch_size: 512
+  num_workers: 12
+  pin_memory: true
+  gradient_accumulation_steps: 1
+  mixed_precision: true
+  gradient_clip: 3.0
+  prefetch_factor: 6  # Prefetch more batches (2x default) to keep GPU fed
+  persistent_workers: true  # Keep workers alive between epochs
+
+# Checkpointing
+checkpoint:
+  save_dir: /scratch/dl5635/checkpoints  # Base directory (experiment_name is appended)
+  save_frequency: 10
+  resume_from: null  # Set to "auto" to auto-resume, or path for specific checkpoint
+  auto_resume: true  # Automatically resume from latest checkpoint if exists
+
+# Logging
+logging:
+  log_dir: ./logs
+  log_frequency: 100
+
+# Evaluation
+evaluation:
+  checkpoint_path: /scratch/dl5635/checkpoints/checkpoint_final.pth
+  eval_dataset: cifar100  # Dataset to evaluate on
+  eval_image_key: img  # 'img' for CIFAR, 'image' for most others
+  batch_size: 256
+  results_dir: ./eval_results
+
+  # k-NN evaluation
+  run_knn: true
+  knn_k: 20
+
+  # Linear probing
+  run_linear_probe: true
+  linear_probe_epochs: 100
+  linear_probe_lr: 0.001

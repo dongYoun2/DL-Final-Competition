@@ -1,0 +1,49 @@
+# @package _global_
+model:
+  name: dino_v3
+  architecture: vit_small_patch16_224 # actual image size will be overridden by data.image_size
+
+  # Vision Transformer settings
+  vit:
+    img_size: 96
+    patch_size: 14
+    embed_dim: 1024
+    depth: 24
+    num_heads: 16
+    mlp_ratio: 4.0
+    drop_path_rate: 0.3
+
+  # DINOv3 specific settings (experimental - similar to v2 with improvements)
+  dino:
+    out_dim: 131072
+    bottleneck_dim: 384
+    norm_last_layer: true
+    momentum_teacher: 0.996
+    teacher_temp: 0.07
+    warmup_teacher_temp: 0.04
+    warmup_teacher_temp_epochs: 30
+    student_temp: 0.1
+
+    # Multi-crop settings
+    global_crops_scale: [0.32, 1.0]
+    local_crops_scale: [0.05, 0.32]
+    local_crops_number: 12
+
+    # Advanced regularization
+    use_koleo: true
+    koleo_loss_weight: 0.1
+
+    # iBOT loss
+    use_ibot_loss: true
+    ibot_loss_weight: 1.0
+    pred_ratio: 0.3
+
+    # Layer-wise learning rate decay
+    layer_decay: 0.75
+
+  # Pretrained weights
+  pretrained: null
+
+
+
+

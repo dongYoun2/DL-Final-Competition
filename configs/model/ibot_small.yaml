@@ -1,0 +1,46 @@
+# @package _global_
+# Smaller IBOT model for debug/sanity checks
+model:
+  name: ibot
+  architecture: vit_small_patch16_224 # actual image size will be overridden by data.image_size
+
+  # Vision Transformer settings (small model for fast training)
+  vit:
+    img_size: 32  # Will be overridden by data.image_size
+    patch_size: 4  # 32/4 = 8 patches per side (64 total patches)
+    embed_dim: 192
+    depth: 6
+    num_heads: 3
+    mlp_ratio: 4.0
+    drop_path_rate: 0.1
+
+  # IBOT specific settings
+  ibot:
+    out_dim: 2048  # Smaller for faster training
+    patch_out_dim: 2048
+    norm_last_layer: false
+    momentum_teacher: 0.996
+    teacher_temp: 0.04
+    warmup_teacher_temp: 0.04
+    warmup_teacher_temp_epochs: 5  # Shorter warmup for debug
+    student_temp: 0.1
+
+    # Multi-crop settings (fewer crops for faster training)
+    global_crops_scale: [0.4, 1.0]
+    local_crops_scale: [0.05, 0.4]
+    local_crops_number: 4  # Reduced from 8
+
+    # MIM (Masked Image Modeling) settings
+    pred_ratio: 0.3
+    pred_ratio_var: 0.0
+    pred_shape: block
+    pred_start_epoch: 0
+
+    # Loss weights
+    lambda1: 1.0  # CLS token loss weight
+    lambda2: 1.0  # Patch token loss weight
+
+  # Pretrained weights
+  pretrained: null
+
+
