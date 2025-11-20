@@ -130,15 +130,12 @@ def create_vision_transformer(cfg):
     """
     vit_cfg = cfg.model.vit
 
-    # Use image size from data config if available, otherwise from model config
-    img_size = cfg.data.image_size if hasattr(cfg.data, 'image_size') else vit_cfg.img_size
-
     # Create model using timm
     model = timm.create_model(
         cfg.model.architecture,
         pretrained=False,
         num_classes=0,  # Remove classification head
-        img_size=img_size,
+        img_size=cfg.data.image_size,
         patch_size=vit_cfg.patch_size,
         embed_dim=vit_cfg.embed_dim,
         depth=vit_cfg.depth,

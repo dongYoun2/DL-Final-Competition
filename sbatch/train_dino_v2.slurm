@@ -12,10 +12,6 @@
 #SBATCH --output="logs/%x/%j.out"
 #SBATCH --error=logs/%x/%j.err
 
-cd /gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition
-
-mkdir -p logs/${SLURM_JOB_NAME}
-
 EXPERIMENT_ID=${SLURM_JOB_NAME}_${SLURM_JOB_ID}
 
 
@@ -31,7 +27,10 @@ module load cuda/12.6
 source /gpfs/home/dl5635/.bashrc
 conda activate ssl-vision
 cd /gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition
+mkdir -p logs/${SLURM_JOB_NAME}
 
 HYDRA_FULL_ERROR=1 python ssl_vision/train.py \
+    experiment_name=${EXPERIMENT_ID} \
     model=dino_v2 \
-    experiment_name=${EXPERIMENT_ID}
+    data=cifar100
+
