@@ -13,8 +13,8 @@ seed: 42
 # Training settings
 training:
   num_epochs: 200
-  batch_size: 1
-  num_workers: 1
+  batch_size: 128
+  num_workers: 16
   pin_memory: true
   gradient_accumulation_steps: 1
   mixed_precision: true
@@ -24,7 +24,7 @@ training:
 
 # Checkpointing
 checkpoint:
-  save_dir: /gpfs/scratch/dl5635/checkpoints  # Base directory (experiment_name is appended)
+  save_dir: /gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints  # Base directory (experiment_name is appended)
   save_frequency: 5 # every n epochs
   resume_from: null  # Set to "auto" to auto-resume, or path for specific checkpoint
   auto_resume: true  # Automatically resume from latest checkpoint if exists
@@ -36,7 +36,7 @@ logging:
 
 # Evaluation
 evaluation:
-  checkpoint_path: /gpfs/scratch/dl5635/checkpoints/checkpoint_final.pth
+  checkpoint_path: /gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoint_final.pth
   eval_dataset: cifar100  # Dataset to evaluate on
   eval_image_key: img  # 'img' for CIFAR, 'image' for most others
   batch_size: 256

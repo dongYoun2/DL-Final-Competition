@@ -24,10 +24,10 @@ model:
     warmup_teacher_temp_epochs: 30
     student_temp: 0.1
 
-    # Multi-crop settings
+    # Multi-crop settings (optimized for speed)
     global_crops_scale: [0.32, 1.0]
     local_crops_scale: [0.05, 0.32]
-    local_crops_number: 1
+    local_crops_number: 2  # Reduced from 4 for faster batch loading
 
     # Koleo regularization
     use_koleo: true

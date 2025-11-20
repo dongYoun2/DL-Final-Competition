@@ -273,7 +273,7 @@ def create_dataloader(
         collate_fn=collate_fn,  # Use custom collate function
         prefetch_factor=prefetch_factor,  # Prefetch more batches
         persistent_workers=persistent_workers,  # Keep workers alive between epochs
-        multiprocessing_context='fork',  # Faster worker startup
+        multiprocessing_context='spawn',
     )
 
     return dataloader

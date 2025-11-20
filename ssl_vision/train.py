@@ -8,6 +8,7 @@ from omegaconf import DictConfig, OmegaConf
 from pathlib import Path
 from tqdm import tqdm
 import numpy as np
+from typing import Optional
 
 from data_loader import create_dataloader, get_transforms
 from models import (
@@ -21,331 +22,416 @@ from utils import (
 )
 
 
-class Trainer:
-    """
-    Trainer for self-supervised vision models
-    """
-    def __init__(self, cfg: DictConfig):
-        self.cfg = cfg
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def create_models(cfg: DictConfig, device: torch.device):
+    """Create student and teacher models."""
+    model_name = cfg.model.name
 
-        # Set random seed
-        torch.manual_seed(cfg.seed)
-        np.random.seed(cfg.seed)
+    if model_name in ["dino_v2", "dino_v3"]:
+        student, teacher = create_dino_model(cfg)
+    else:
+        raise ValueError(f"Unknown model: {model_name}")
 
-        # Create models
-        self.create_models()
+    student = student.to(device)
+    teacher = teacher.to(device)
+    return student, teacher
 
-        # Create dataloaders
-        self.create_dataloaders()
 
-        # Create optimizer and scheduler
-        self.create_optimizer()
+def create_dataloaders(cfg: DictConfig):
+    """Create training dataloader."""
+    # Simple fast transforms - NO augmentations
+    transform = get_transforms(cfg)
 
-        # Create loss function
-        self.create_loss()
+    train_loader = create_dataloader(
+        dataset_name=cfg.data.dataset_name,
+        split=cfg.data.train_split,
+        batch_size=cfg.training.batch_size,
+        num_workers=cfg.training.num_workers,
+        transform=transform,
+        max_samples=cfg.data.num_samples,
+        cache_dir=cfg.data.cache_dir,
+        streaming=cfg.data.streaming,
+        pin_memory=cfg.training.pin_memory,
+        image_key=cfg.data.image_key,
+        prefetch_factor=cfg.training.get("prefetch_factor", 4),
+        persistent_workers=cfg.training.get("persistent_workers", True),
+    )
+    return train_loader
 
-        # Setup logging
-        self.setup_logging()
 
-        # Setup checkpointing with experiment-specific directory
-        base_checkpoint_dir = Path(cfg.checkpoint.save_dir)
-        self.checkpoint_dir = base_checkpoint_dir / cfg.experiment_name
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+def create_optimizer_and_scheduler(cfg: DictConfig, student: nn.Module, train_loader):
+    """Create optimizer and learning rate scheduler."""
+    params = student.parameters()
 
-        self.epoch = 0
-        self.global_step = 0
+    if cfg.optimizer.name == "adamw":
+        optimizer = torch.optim.AdamW(
+            params,
+            lr=cfg.optimizer.lr,
+            betas=cfg.optimizer.betas,
+            eps=cfg.optimizer.eps,
+            weight_decay=cfg.optimizer.weight_decay,
+        )
+    else:
+        raise ValueError(f"Unknown optimizer: {cfg.optimizer.name}")
 
-        # Auto-resume logic
-        self._handle_resume()
+    num_training_steps = len(train_loader) * cfg.training.num_epochs
+    scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=cfg.scheduler.warmup_epochs * len(train_loader),
+        num_training_steps=num_training_steps,
+        min_lr=cfg.scheduler.min_lr,
+    )
 
-        # Mixed precision training
-        self.scaler = torch.cuda.amp.GradScaler() if cfg.training.mixed_precision else None
+    return optimizer, scheduler
 
-    def create_models(self):
-        """Create student and teacher models"""
-        model_name = self.cfg.model.name
 
-        if model_name in ['dino_v2', 'dino_v3']:
-            self.student, self.teacher = create_dino_model(self.cfg)
-        else:
-            raise ValueError(f"Unknown model: {model_name}")
+def create_loss(cfg: DictConfig, device: torch.device):
+    """Create DINO loss."""
+    model_cfg = cfg.model.dino
 
-        self.student = self.student.to(self.device)
-        self.teacher = self.teacher.to(self.device)
+    criterion = DINOLoss(
+        out_dim=model_cfg.out_dim,
+        ncrops=2,  # Only 2 views (same image duplicated for speed)
+        warmup_teacher_temp=model_cfg.warmup_teacher_temp,
+        teacher_temp=model_cfg.teacher_temp,
+        warmup_teacher_temp_epochs=model_cfg.warmup_teacher_temp_epochs,
+        nepochs=cfg.training.num_epochs,
+        student_temp=model_cfg.student_temp,
+    ).to(device)
 
-    def create_dataloaders(self):
-        """Create data loaders"""
-        transform = get_transforms(self.cfg)
+    return criterion
 
-        self.train_loader = create_dataloader(
-            dataset_name=self.cfg.data.dataset_name,
-            split=self.cfg.data.train_split,
-            batch_size=self.cfg.training.batch_size,
-            num_workers=self.cfg.training.num_workers,
-            transform=transform,
-            max_samples=self.cfg.data.num_samples,
-            cache_dir=self.cfg.data.cache_dir,
-            streaming=self.cfg.data.streaming,
-            pin_memory=self.cfg.training.pin_memory,
-            image_key=self.cfg.data.image_key,
-            prefetch_factor=self.cfg.training.get('prefetch_factor', 4),
-            persistent_workers=self.cfg.training.get('persistent_workers', True),
+
+def setup_logging(cfg: DictConfig, checkpoint_dir: Path):
+    """Setup logging to console (captured by SLURM)."""
+    print(f"Experiment: {cfg.experiment_name}")
+    print(f"Log directory: {cfg.logging.log_dir}")
+    print(f"Checkpoint directory: {checkpoint_dir}")
+
+
+def find_latest_checkpoint(checkpoint_dir: Path) -> Optional[str]:
+    """Find the latest checkpoint in the experiment directory."""
+    checkpoint_files = list(checkpoint_dir.glob("checkpoint_epoch_*.pth"))
+    if not checkpoint_files:
+        return None
+
+    def get_epoch_num(path: Path):
+        try:
+            return int(path.stem.split("_")[-1])
+        except Exception:
+            return -1
+
+    latest = max(checkpoint_files, key=get_epoch_num)
+    return str(latest)
+
+
+def save_checkpoint(
+    checkpoint_dir: Path,
+    filename: str,
+    epoch: int,
+    global_step: int,
+    student: nn.Module,
+    teacher: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    cfg: DictConfig,
+    scaler: Optional[torch.cuda.amp.GradScaler],
+):
+    """Save training checkpoint."""
+    checkpoint = {
+        "epoch": epoch,
+        "global_step": global_step,
+        "student_state_dict": student.state_dict(),
+        "teacher_state_dict": teacher.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scheduler_state_dict": scheduler.state_dict(),
+        "config": OmegaConf.to_container(cfg, resolve=True),
+    }
+
+    if scaler is not None:
+        checkpoint["scaler_state_dict"] = scaler.state_dict()
+
+    save_path = checkpoint_dir / filename
+    torch.save(checkpoint, save_path)
+    print(f"Checkpoint saved to {save_path}")
+
+
+def load_checkpoint(
+    checkpoint_path: str,
+    device: torch.device,
+    student: nn.Module,
+    teacher: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    scaler: Optional[torch.cuda.amp.GradScaler],
+):
+    """Load training checkpoint and return (next_epoch, global_step)."""
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+
+    student.load_state_dict(checkpoint["student_state_dict"])
+    teacher.load_state_dict(checkpoint["teacher_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+    if scaler is not None and "scaler_state_dict" in checkpoint:
+        scaler.load_state_dict(checkpoint["scaler_state_dict"])
+
+    next_epoch = checkpoint["epoch"] + 1
+    global_step = checkpoint["global_step"]
+
+    print(f"Checkpoint loaded from {checkpoint_path}")
+    return next_epoch, global_step
+
+
+def handle_resume(
+    cfg: DictConfig,
+    checkpoint_dir: Path,
+    device: torch.device,
+    student: nn.Module,
+    teacher: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    scaler: Optional[torch.cuda.amp.GradScaler],
+    start_epoch: int,
+    start_global_step: int,
+):
+    """Handle automatic resume logic. Returns (epoch, global_step)."""
+    resume_path = cfg.checkpoint.resume_from
+
+    # Case 1: Explicit checkpoint path provided
+    if resume_path and resume_path != "auto" and Path(resume_path).exists():
+        print(f"📂 Resuming from explicit checkpoint: {resume_path}")
+        return load_checkpoint(
+            resume_path,
+            device=device,
+            student=student,
+            teacher=teacher,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scaler=scaler,
         )
 
-    def create_optimizer(self):
-        """Create optimizer and learning rate scheduler"""
-        # Get parameters
-        params = self.student.parameters()
-
-        # Create optimizer
-        if self.cfg.optimizer.name == 'adamw':
-            self.optimizer = torch.optim.AdamW(
-                params,
-                lr=self.cfg.optimizer.lr,
-                betas=self.cfg.optimizer.betas,
-                eps=self.cfg.optimizer.eps,
-                weight_decay=self.cfg.optimizer.weight_decay,
+    # Case 2: Auto-resume enabled (for SLURM requeue)
+    if cfg.checkpoint.auto_resume or resume_path == "auto":
+        latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
+        if latest_checkpoint:
+            print(f"🔄 Auto-resuming from: {latest_checkpoint}")
+            return load_checkpoint(
+                latest_checkpoint,
+                device=device,
+                student=student,
+                teacher=teacher,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                scaler=scaler,
             )
+
+    # Case 3: Starting fresh
+    print(f"🆕 Starting new experiment: {cfg.experiment_name}")
+    print(f"📁 Checkpoints will be saved to: {checkpoint_dir}")
+    return start_epoch, start_global_step
+
+
+def train_one_epoch(
+    cfg: DictConfig,
+    epoch: int,
+    student: nn.Module,
+    teacher: nn.Module,
+    train_loader,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    criterion: nn.Module,
+    scaler: Optional[torch.cuda.amp.GradScaler],
+    device: torch.device,
+    global_step: int,
+):
+    """Train for one epoch and return (avg_loss, global_step)."""
+    student.train()
+    teacher.eval()
+
+    loss_meter = AverageMeter()
+
+    pbar = tqdm(
+        train_loader,
+        desc=f"Epoch {epoch}",
+    )
+
+    for batch_idx, (images, _) in enumerate(pbar):
+        # Images is already a list of 2 views from collate_fn
+        images = [img.to(device, non_blocking=True) for img in images]
+
+        # Forward pass with mixed precision
+        with torch.cuda.amp.autocast(enabled=cfg.training.mixed_precision):
+            # Student forward (all views)
+            student_output = student(images)
+
+            # Teacher forward (all views - same as student since we only have 2)
+            teacher_output = teacher(images)
+
+            # Compute loss
+            loss = criterion(student_output, teacher_output, epoch)
+
+        # Backward pass
+        optimizer.zero_grad()
+
+        if scaler is not None:
+            scaler.scale(loss).backward()
+
+            # Gradient clipping
+            if cfg.training.gradient_clip > 0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(
+                    student.parameters(),
+                    cfg.training.gradient_clip,
+                )
+
+            scaler.step(optimizer)
+            scaler.update()
         else:
-            raise ValueError(f"Unknown optimizer: {self.cfg.optimizer.name}")
+            loss.backward()
 
-        # Create scheduler
-        num_training_steps = len(self.train_loader) * self.cfg.training.num_epochs
-        self.scheduler = get_cosine_schedule_with_warmup(
-            self.optimizer,
-            num_warmup_steps=self.cfg.scheduler.warmup_epochs * len(self.train_loader),
-            num_training_steps=num_training_steps,
-            min_lr=self.cfg.scheduler.min_lr,
+            # Gradient clipping
+            if cfg.training.gradient_clip > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    student.parameters(),
+                    cfg.training.gradient_clip,
+                )
+
+            optimizer.step()
+
+        # Update learning rate
+        scheduler.step()
+
+        # Update teacher
+        momentum = cfg.model.dino.momentum_teacher
+        with torch.no_grad():
+            update_teacher(student, teacher, momentum)
+
+        # Update metrics
+        loss_meter.update(loss.item())
+
+        # Logging
+        pbar.set_postfix(
+            {
+                "loss": f"{loss_meter.avg:.4f}",
+                "lr": f"{scheduler.get_last_lr()[0]:.6f}",
+            }
         )
 
-    def create_loss(self):
-        """Create loss function"""
-        model_cfg = self.cfg.model.dino
+        if global_step % cfg.logging.log_frequency == 0:
+            print(
+                f"Step {global_step} - Loss: {loss_meter.avg:.4f}, "
+                f"LR: {scheduler.get_last_lr()[0]:.6f}"
+            )
 
-        self.criterion = DINOLoss(
-            out_dim=model_cfg.out_dim,
-            ncrops=2 + model_cfg.local_crops_number,
-            warmup_teacher_temp=model_cfg.warmup_teacher_temp,
-            teacher_temp=model_cfg.teacher_temp,
-            warmup_teacher_temp_epochs=model_cfg.warmup_teacher_temp_epochs,
-            nepochs=self.cfg.training.num_epochs,
-            student_temp=model_cfg.student_temp,
-        ).to(self.device)
+        global_step += 1
 
-    def setup_logging(self):
-        """Setup logging"""
-        # Simple console logging - logs are captured by SLURM
-        print(f"Experiment: {self.cfg.experiment_name}")
-        print(f"Log directory: {self.cfg.logging.log_dir}")
-
-    def train_epoch(self):
-        """Train for one epoch"""
-        self.student.train()
-        self.teacher.eval()
-
-        loss_meter = AverageMeter()
-
-        pbar = tqdm(
-            self.train_loader,
-            desc=f"Epoch {self.epoch}",
-        )
-
-        for batch_idx, (images, _) in enumerate(pbar):
-            # Images should be a list of crops
-            # If it's a tensor, something went wrong with the collate function
-            if not isinstance(images, list):
-                raise TypeError(f"Expected images to be a list of crop batches, got {type(images)}")
-
-            images = [img.to(self.device, non_blocking=True) for img in images]
-
-            # Forward pass with mixed precision
-            with torch.cuda.amp.autocast(enabled=self.cfg.training.mixed_precision):
-                # Student forward (all crops)
-                student_output = self.student(images)
-
-                # Teacher forward (only global crops)
-                teacher_output = self.teacher(images[:2])
-
-                # Compute loss
-                loss = self.criterion(student_output, teacher_output, self.epoch)
-
-            # Backward pass
-            self.optimizer.zero_grad()
-
-            if self.scaler is not None:
-                self.scaler.scale(loss).backward()
-
-                # Gradient clipping
-                if self.cfg.training.gradient_clip > 0:
-                    self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(
-                        self.student.parameters(),
-                        self.cfg.training.gradient_clip
-                    )
-
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-            else:
-                loss.backward()
-
-                # Gradient clipping
-                if self.cfg.training.gradient_clip > 0:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.student.parameters(),
-                        self.cfg.training.gradient_clip
-                    )
-
-                self.optimizer.step()
-
-            # Update learning rate
-            self.scheduler.step()
-
-            # Update teacher
-            momentum = self.cfg.model.dino.momentum_teacher
-
-            with torch.no_grad():
-                update_teacher(self.student, self.teacher, momentum)
-
-            # Update metrics
-            loss_meter.update(loss.item())
-
-            # Logging
-            pbar.set_postfix({
-                'loss': f'{loss_meter.avg:.4f}',
-                'lr': f'{self.scheduler.get_last_lr()[0]:.6f}',
-            })
-
-            if self.global_step % self.cfg.logging.log_frequency == 0:
-                print(f"Step {self.global_step} - Loss: {loss_meter.avg:.4f}, LR: {self.scheduler.get_last_lr()[0]:.6f}")
-
-            self.global_step += 1
-
-        return loss_meter.avg
-
-    def _handle_resume(self):
-        """Handle automatic resume logic"""
-        resume_path = self.cfg.checkpoint.resume_from
-
-        # Case 1: Explicit checkpoint path provided
-        if resume_path and resume_path != "auto" and Path(resume_path).exists():
-            print(f"📂 Resuming from explicit checkpoint: {resume_path}")
-            self.load_checkpoint(resume_path)
-            return
-
-        # Case 2: Auto-resume enabled (for SLURM requeue)
-        if self.cfg.checkpoint.auto_resume or resume_path == "auto":
-            latest_checkpoint = self._find_latest_checkpoint()
-            if latest_checkpoint:
-                print(f"🔄 Auto-resuming from: {latest_checkpoint}")
-                self.load_checkpoint(latest_checkpoint)
-                return
-
-        # Case 3: Starting fresh
-        print(f"🆕 Starting new experiment: {self.cfg.experiment_name}")
-        print(f"📁 Checkpoints will be saved to: {self.checkpoint_dir}")
-
-    def _find_latest_checkpoint(self):
-        """Find the latest checkpoint in the experiment directory"""
-        checkpoint_files = list(self.checkpoint_dir.glob("checkpoint_epoch_*.pth"))
-
-        if not checkpoint_files:
-            return None
-
-        # Sort by epoch number
-        def get_epoch_num(path):
-            try:
-                return int(path.stem.split('_')[-1])
-            except:
-                return -1
-
-        latest = max(checkpoint_files, key=get_epoch_num)
-        return str(latest)
-
-    def train(self):
-        """Main training loop"""
-        print(f"\n{'='*80}")
-        print(f"Training Configuration")
-        print(f"{'='*80}")
-        print(f"Experiment: {self.cfg.experiment_name}")
-        print(f"Starting epoch: {self.epoch}")
-        print(f"Target epochs: {self.cfg.training.num_epochs}")
-        print(f"Checkpoint dir: {self.checkpoint_dir}")
-        print(f"Device: {self.device}")
-        print(f"{'='*80}\n")
-
-        for epoch in range(self.epoch, self.cfg.training.num_epochs):
-            self.epoch = epoch
-
-            # Train for one epoch
-            avg_loss = self.train_epoch()
-
-            # Save checkpoint
-            if epoch % self.cfg.checkpoint.save_frequency == 0:
-                self.save_checkpoint(f'checkpoint_epoch_{epoch}.pth')
-
-            print(f"Epoch {epoch}: Loss = {avg_loss:.4f}")
-
-        # Save final checkpoint
-        self.save_checkpoint('checkpoint_final.pth')
-
-        print("Training completed!")
-
-    def save_checkpoint(self, filename):
-        """Save training checkpoint"""
-        checkpoint = {
-            'epoch': self.epoch,
-            'global_step': self.global_step,
-            'student_state_dict': self.student.state_dict(),
-            'teacher_state_dict': self.teacher.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-            'config': OmegaConf.to_container(self.cfg, resolve=True),
-        }
-
-        if self.scaler is not None:
-            checkpoint['scaler_state_dict'] = self.scaler.state_dict()
-
-        save_path = self.checkpoint_dir / filename
-        torch.save(checkpoint, save_path)
-        print(f"Checkpoint saved to {save_path}")
-
-    def load_checkpoint(self, checkpoint_path):
-        """Load training checkpoint"""
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
-
-        self.student.load_state_dict(checkpoint['student_state_dict'])
-        self.teacher.load_state_dict(checkpoint['teacher_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-
-        if self.scaler is not None and 'scaler_state_dict' in checkpoint:
-            self.scaler.load_state_dict(checkpoint['scaler_state_dict'])
-
-        self.epoch = checkpoint['epoch'] + 1
-        self.global_step = checkpoint['global_step']
-
-        print(f"Checkpoint loaded from {checkpoint_path}")
+    return loss_meter.avg, global_step
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="default")
 def main(cfg: DictConfig):
-    """Main entry point"""
+    """Main entry point (procedural training loop, no Trainer class)."""
     print("=" * 80)
     print("Configuration:")
     print(OmegaConf.to_yaml(cfg))
     print("=" * 80)
 
-    # Create trainer
-    trainer = Trainer(cfg)
+    # Device and seeds
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(cfg.seed)
+    np.random.seed(cfg.seed)
 
-    # Start training
-    trainer.train()
+    # Checkpoint directory
+    base_checkpoint_dir = Path(cfg.checkpoint.save_dir)
+    checkpoint_dir = base_checkpoint_dir / cfg.experiment_name
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create components
+    student, teacher = create_models(cfg, device)
+    train_loader = create_dataloaders(cfg)
+    optimizer, scheduler = create_optimizer_and_scheduler(cfg, student, train_loader)
+    criterion = create_loss(cfg, device)
+    scaler = torch.cuda.amp.GradScaler() if cfg.training.mixed_precision else None
+
+    # Logging
+    setup_logging(cfg, checkpoint_dir)
+
+    # Resume (if needed)
+    epoch = 0
+    global_step = 0
+    epoch, global_step = handle_resume(
+        cfg=cfg,
+        checkpoint_dir=checkpoint_dir,
+        device=device,
+        student=student,
+        teacher=teacher,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        scaler=scaler,
+        start_epoch=epoch,
+        start_global_step=global_step,
+    )
+
+    # Training loop
+    print(f"\n{'=' * 80}")
+    print("Training Configuration")
+    print(f"{'=' * 80}")
+    print(f"Experiment: {cfg.experiment_name}")
+    print(f"Starting epoch: {epoch}")
+    print(f"Target epochs: {cfg.training.num_epochs}")
+    print(f"Checkpoint dir: {checkpoint_dir}")
+    print(f"Device: {device}")
+    print(f"{'=' * 80}\n")
+
+    for ep in range(epoch, cfg.training.num_epochs):
+        # Train for one epoch
+        avg_loss, global_step = train_one_epoch(
+            cfg=cfg,
+            epoch=ep,
+            student=student,
+            teacher=teacher,
+            train_loader=train_loader,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            criterion=criterion,
+            scaler=scaler,
+            device=device,
+            global_step=global_step,
+        )
+
+        # Save checkpoint
+        if ep % cfg.checkpoint.save_frequency == 0:
+            save_checkpoint(
+                checkpoint_dir=checkpoint_dir,
+                filename=f"checkpoint_epoch_{ep}.pth",
+                epoch=ep,
+                global_step=global_step,
+                student=student,
+                teacher=teacher,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                cfg=cfg,
+                scaler=scaler,
+            )
+
+        print(f"Epoch {ep}: Loss = {avg_loss:.4f}")
+
+    # Save final checkpoint
+    save_checkpoint(
+        checkpoint_dir=checkpoint_dir,
+        filename="checkpoint_final.pth",
+        epoch=cfg.training.num_epochs - 1,
+        global_step=global_step,
+        student=student,
+        teacher=teacher,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        cfg=cfg,
+        scaler=scaler,
+    )
+
+    print("Training completed!")
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
