@@ -6,7 +6,7 @@ model:
   # Vision Transformer settings
   vit:
     img_size: 96
-    patch_size: 14
+    patch_size: 8 # 96 / 8 = 12 --> 12 * 12 = 144 tokens
     embed_dim: 768
     depth: 12
     num_heads: 12
