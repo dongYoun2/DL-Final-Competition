@@ -106,27 +106,21 @@ def create_loss(cfg: DictConfig, device: torch.device):
     return criterion
 
 
-def setup_logging(cfg: DictConfig, checkpoint_dir: Path):
+def setup_logging(cfg: DictConfig, checkpoint_dir: Path, resume_info: Optional[dict] = None):
     """Setup logging to console (captured by SLURM)."""
     print(f"Experiment: {cfg.experiment_name}")
     print(f"Log directory: {cfg.logging.log_dir}")
     print(f"Checkpoint directory: {checkpoint_dir}")
 
-
-def find_latest_checkpoint(checkpoint_dir: Path) -> Optional[str]:
-    """Find the latest checkpoint in the experiment directory."""
-    checkpoint_files = list(checkpoint_dir.glob("checkpoint_epoch_*.pth"))
-    if not checkpoint_files:
-        return None
-
-    def get_epoch_num(path: Path):
-        try:
-            return int(path.stem.split("_")[-1])
-        except Exception:
-            return -1
-
-    latest = max(checkpoint_files, key=get_epoch_num)
-    return str(latest)
+    if resume_info:
+        print(f"\n{'=' * 80}")
+        print("📦 RESUMING FROM PREVIOUS CHECKPOINT")
+        print(f"{'=' * 80}")
+        print(f"Previous experiment: {resume_info['prev_experiment']}")
+        print(f"Checkpoint path: {resume_info['checkpoint_path']}")
+        print(f"Previous epoch: {resume_info['prev_epoch']}")
+        print(f"Previous global step: {resume_info['prev_global_step']}")
+        print(f"{'=' * 80}\n")
 
 
 def save_checkpoint(
@@ -169,8 +163,13 @@ def load_checkpoint(
     scheduler: torch.optim.lr_scheduler._LRScheduler,
     scaler: Optional[torch.cuda.amp.GradScaler],
 ):
-    """Load training checkpoint and return (next_epoch, global_step)."""
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    """Load training checkpoint and return (next_epoch, global_step, metadata)."""
+    checkpoint_file = Path(checkpoint_path)
+    checkpoint = torch.load(
+        checkpoint_file,
+        map_location=device,
+        weights_only=False,
+    )
 
     student.load_state_dict(checkpoint["student_state_dict"])
     teacher.load_state_dict(checkpoint["teacher_state_dict"])
@@ -182,9 +181,14 @@ def load_checkpoint(
 
     next_epoch = checkpoint["epoch"] + 1
     global_step = checkpoint["global_step"]
+    metadata = {
+        "epoch": checkpoint.get("epoch", "unknown"),
+        "global_step": checkpoint.get("global_step", "unknown"),
+        "checkpoint_path": str(checkpoint_file),
+    }
 
-    print(f"Checkpoint loaded from {checkpoint_path}")
-    return next_epoch, global_step
+    print(f"Checkpoint loaded from {checkpoint_file}")
+    return next_epoch, global_step, metadata
 
 
 def handle_resume(
@@ -199,14 +203,22 @@ def handle_resume(
     start_epoch: int,
     start_global_step: int,
 ):
-    """Handle automatic resume logic. Returns (epoch, global_step)."""
+    """Handle resume logic. Returns (epoch, global_step, resume_info)."""
     resume_path = cfg.checkpoint.resume_from
+    resume_info = None
 
-    # Case 1: Explicit checkpoint path provided
-    if resume_path and resume_path != "auto" and Path(resume_path).exists():
-        print(f"📂 Resuming from explicit checkpoint: {resume_path}")
-        return load_checkpoint(
-            resume_path,
+    # Case 1: Explicit checkpoint path provided (from previous experiment)
+    if resume_path:
+        checkpoint_path = Path(resume_path)
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(
+                f"Checkpoint not found at '{checkpoint_path}'. "
+                "Ensure the path is correct or unset checkpoint.resume_from."
+            )
+
+        print(f"📂 Loading checkpoint from previous experiment: {checkpoint_path}")
+        next_epoch, global_step, metadata = load_checkpoint(
+            str(checkpoint_path),
             device=device,
             student=student,
             teacher=teacher,
@@ -215,25 +227,19 @@ def handle_resume(
             scaler=scaler,
         )
 
-    # Case 2: Auto-resume enabled (for SLURM requeue)
-    if cfg.checkpoint.auto_resume or resume_path == "auto":
-        latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
-        if latest_checkpoint:
-            print(f"🔄 Auto-resuming from: {latest_checkpoint}")
-            return load_checkpoint(
-                latest_checkpoint,
-                device=device,
-                student=student,
-                teacher=teacher,
-                optimizer=optimizer,
-                scheduler=scheduler,
-                scaler=scaler,
-            )
+        resume_info = {
+            "prev_experiment": checkpoint_path.parent.name,
+            "checkpoint_path": metadata["checkpoint_path"],
+            "prev_epoch": metadata["epoch"],
+            "prev_global_step": metadata["global_step"],
+        }
 
-    # Case 3: Starting fresh
+        return next_epoch, global_step, resume_info
+
+    # Case 2: Starting fresh
     print(f"🆕 Starting new experiment: {cfg.experiment_name}")
     print(f"📁 Checkpoints will be saved to: {checkpoint_dir}")
-    return start_epoch, start_global_step
+    return start_epoch, start_global_step, None
 
 
 def train_one_epoch(
@@ -358,13 +364,10 @@ def main(cfg: DictConfig):
     criterion = create_loss(cfg, device)
     scaler = torch.cuda.amp.GradScaler() if cfg.training.mixed_precision else None
 
-    # Logging
-    setup_logging(cfg, checkpoint_dir)
-
     # Resume (if needed)
     epoch = 0
     global_step = 0
-    epoch, global_step = handle_resume(
+    epoch, global_step, resume_info = handle_resume(
         cfg=cfg,
         checkpoint_dir=checkpoint_dir,
         device=device,
@@ -376,6 +379,9 @@ def main(cfg: DictConfig):
         start_epoch=epoch,
         start_global_step=global_step,
     )
+
+    # Logging (after resume so we have resume_info)
+    setup_logging(cfg, checkpoint_dir, resume_info)
 
     # Training loop
     print(f"\n{'=' * 80}")

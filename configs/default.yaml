@@ -26,8 +26,7 @@ training:
 checkpoint:
   save_dir: /gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints  # Base directory (experiment_name is appended)
   save_frequency: 5 # every n epochs
-  resume_from: null  # Set to "auto" to auto-resume, or path for specific checkpoint
-  auto_resume: true  # Automatically resume from latest checkpoint if exists
+  resume_from: null  # null (fresh start) or full path to checkpoint from previous experiment
 
 # Logging
 logging:
@@ -36,7 +35,7 @@ logging:
 
 # Evaluation
 evaluation:
-  checkpoint_path: /gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_13200170/checkpoint_final.pth
+  checkpoint_path: null # not used during training, full path to checkpoint for evaluation
   batch_size: 256
   results_dir: ./eval_results
 
