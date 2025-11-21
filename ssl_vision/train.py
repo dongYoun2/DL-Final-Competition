@@ -41,6 +41,10 @@ def create_dataloaders(cfg: DictConfig):
     # Simple fast transforms - NO augmentations
     transform = get_transforms(cfg)
 
+    # Decide whether to use local files or HuggingFace datasets
+    use_local_files = getattr(cfg.data, "use_local_files", False)
+    data_dir = getattr(cfg.data, "data_dir", None)
+
     train_loader = create_dataloader(
         dataset_name=cfg.data.dataset_name,
         split=cfg.data.train_split,
@@ -53,6 +57,8 @@ def create_dataloaders(cfg: DictConfig):
         image_key=cfg.data.image_key,
         prefetch_factor=cfg.training.get("prefetch_factor", 4),
         persistent_workers=cfg.training.get("persistent_workers", True),
+        data_dir=data_dir,
+        use_local_files=use_local_files,
     )
     return train_loader
 

@@ -1,16 +1,23 @@
 # @package _global_
 # Main competition dataset - 500K images from tsbpp/fall2025_deeplearning
 data:
+  # Original HuggingFace dataset identifier (kept for reference / optional use)
   dataset_name: tsbpp/fall2025_deeplearning
   dataset_config: null
   streaming: false
   cache_dir: /gpfs/scratch/dl5635/.cache
 
+  # Use locally stored images instead of streaming from HuggingFace.
+  # The 500k images should be downloaded to:
+  #   /gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/data/fall2025_dl/train
+  use_local_files: true
+  data_dir: /gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/data/fall2025_dl/train
+
   # Image preprocessing
   image_size: 96  # Native resolution 96x96 - DO NOT CHANGE per competition rules
-  image_key: image
+  image_key: image  # Only used when loading from HuggingFace
 
-  # Data splits
+  # Data splits (for HF datasets; local mode uses `data_dir` only)
   train_split: train
   val_split: null  # No validation split in this dataset
 
@@ -21,4 +28,5 @@ data:
     gaussian_blur_prob: 0.5
     solarization_prob: 0.2
     horizontal_flip_prob: 0.5
+
 

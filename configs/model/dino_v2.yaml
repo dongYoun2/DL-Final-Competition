@@ -14,19 +14,19 @@ model:
     # mlp_ratio: 4.0
     # drop_path_rate: 0.1
 
-    # ViT-Small
-    # embed_dim: 384
-    # depth: 12
-    # num_heads: 6
-    # mlp_ratio: 4.0
-    # drop_path_rate: 0.1
-
-    # ViT-Tiny
-    embed_dim: 192
+    # ViT-Small (default)
+    embed_dim: 384
     depth: 12
-    num_heads: 3
+    num_heads: 6
     mlp_ratio: 4.0
     drop_path_rate: 0.1
+
+    # ViT-Tiny (not official)
+    # embed_dim: 192
+    # depth: 12
+    # num_heads: 3
+    # mlp_ratio: 4.0
+    # drop_path_rate: 0.1
 
   # DINOv2 specific settings
   dino:
@@ -42,7 +42,7 @@ model:
     # Multi-crop settings (optimized for speed)
     global_crops_scale: [0.32, 1.0]
     local_crops_scale: [0.05, 0.32]
-    local_crops_number: 2  # Reduced from 4 for faster batch loading
+    local_crops_number: 2
 
     # Koleo regularization
     use_koleo: true

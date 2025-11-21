@@ -1,13 +1,20 @@
 """
-Data loading utilities using HuggingFace datasets
+Data loading utilities for self-supervised and evaluation pipelines.
+
+Supports:
+- HuggingFace datasets (streaming or cached)
+- Local image folders (for faster iteration when data is stored on disk)
 """
+import os
+from pathlib import Path
+from typing import Optional, List, Tuple
+
+import numpy as np
+from PIL import Image, UnidentifiedImageError
 import torch
 from torch.utils.data import DataLoader, Dataset
-from datasets import load_dataset
 from torchvision import transforms
-from PIL import Image
-import numpy as np
-from typing import Optional, List, Tuple
+from datasets import load_dataset
 import random
 
 
@@ -173,6 +180,69 @@ class HuggingFaceImageDataset(Dataset):
         return image, label
 
 
+class LocalImageDataset(Dataset):
+    """
+    Simple dataset for reading images from a local directory.
+
+    This is primarily intended for self-supervised training on large unlabeled
+    collections of images (e.g., the 500k competition images stored locally).
+
+    Behaviour:
+    - Recursively scans `root_dir` for image files with common extensions.
+    - Uses the file index as a pseudo-label (labels are not used in SSL loss).
+    - Applies the provided transform (which can be a multi-crop transform).
+    """
+
+    IMG_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+
+    def __init__(self, root_dir: str, transform=None):
+        self.root_dir = str(root_dir)
+        self.transform = transform
+
+        root_path = Path(self.root_dir)
+        if not root_path.exists():
+            raise FileNotFoundError(f"[LocalImageDataset] root_dir does not exist: {self.root_dir}")
+
+        # Collect all image paths recursively
+        self.samples: List[str] = []
+        for dirpath, _, filenames in os.walk(self.root_dir):
+            for fname in filenames:
+                if fname.lower().endswith(self.IMG_EXTENSIONS):
+                    self.samples.append(os.path.join(dirpath, fname))
+
+        if len(self.samples) == 0:
+            raise RuntimeError(f"[LocalImageDataset] No images found in {self.root_dir}")
+
+        print(f"[LocalImageDataset] Loaded {len(self.samples)} images from {self.root_dir}")
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        path = self.samples[idx]
+
+        try:
+            # Try to load the original image
+            with Image.open(path) as img:
+                image = img.convert("RGB")
+        except (UnidentifiedImageError, OSError) as e:
+            # If corrupted, move to the next index (wrap around at the end)
+            print(f"[WARN] Skipping corrupted image at index {idx}: {path} ({e})")
+            idx = (idx + 1) % len(self.samples)
+            path = self.samples[idx]
+            # Assume this one is fine
+            with Image.open(path) as img:
+                image = img.convert("RGB")
+
+    # Apply transformation (may be MultiCropTransform)
+        if self.transform:
+            image = self.transform(image)
+
+        # Use index as pseudo-label (not used for SSL, keeps API consistent)
+        label = idx
+        return image, label
+
+
 def collate_fn(batch):
     """
     Custom collate function for multi-crop batches.
@@ -225,18 +295,37 @@ def create_dataloader(
     image_key: str = "image",
     prefetch_factor: int = 4,
     persistent_workers: bool = True,
+    data_dir: Optional[str] = None,
+    use_local_files: bool = False,
 ) -> DataLoader:
     """
-    Create a DataLoader for self-supervised learning with optimizations
+    Create a DataLoader for self-supervised learning with optimizations.
+
+    Two modes are supported:
+    - HuggingFace mode (default): uses `load_dataset(dataset_name, split=...)`
+    - Local mode: if `use_local_files=True`, loads images from `data_dir`
+      using `LocalImageDataset`. This is useful for large on-disk datasets
+      like the 500k competition images.
     """
-    dataset = HuggingFaceImageDataset(
-        dataset_name=dataset_name,
-        split=split,
-        transform=transform,
-        cache_dir=cache_dir,
-        streaming=streaming,
-        image_key=image_key,
-    )
+    if use_local_files:
+        if data_dir is None:
+            raise ValueError(
+                "create_dataloader: `data_dir` must be provided when `use_local_files=True`"
+            )
+        print(f"[create_dataloader] Using LocalImageDataset from: {data_dir}")
+        dataset = LocalImageDataset(
+            root_dir=data_dir,
+            transform=transform,
+        )
+    else:
+        dataset = HuggingFaceImageDataset(
+            dataset_name=dataset_name,
+            split=split,
+            transform=transform,
+            cache_dir=cache_dir,
+            streaming=streaming,
+            image_key=image_key,
+        )
 
     dataloader = DataLoader(
         dataset,
