@@ -105,12 +105,8 @@ def create_loss(cfg: DictConfig, device: torch.device):
     """Create DINO loss."""
     model_cfg = cfg.model.dino
 
-    # Total number of crops: 2 global crops + N local crops
-    ncrops = 2 + model_cfg.local_crops_number
-
     criterion = DINOLoss(
         out_dim=model_cfg.out_dim,
-        ncrops=ncrops,
         warmup_teacher_temp=model_cfg.warmup_teacher_temp,
         teacher_temp=model_cfg.teacher_temp,
         warmup_teacher_temp_epochs=model_cfg.warmup_teacher_temp_epochs,
@@ -288,11 +284,8 @@ def train_one_epoch(
 
         # Forward pass with mixed precision
         with torch.cuda.amp.autocast(enabled=cfg.training.mixed_precision, dtype=torch.bfloat16):
-            # Student forward (all views)
-            student_output = student(images)
-
-            # Teacher forward (all views - same as student since we only have 2)
-            teacher_output = teacher(images)
+            student_output = student(images)    # forward all views
+            teacher_output = teacher(images[:2]) # forward only 2 global views
 
             # Compute loss
             loss = criterion(student_output, teacher_output, epoch)

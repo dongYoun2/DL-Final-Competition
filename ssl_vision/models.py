@@ -212,7 +212,6 @@ class DINOLoss(nn.Module):
     def __init__(
         self,
         out_dim: int,
-        ncrops: int = 2,
         warmup_teacher_temp: float = 0.04,
         teacher_temp: float = 0.04,
         warmup_teacher_temp_epochs: int = 0,
@@ -223,7 +222,6 @@ class DINOLoss(nn.Module):
         super().__init__()
         self.student_temp = student_temp
         self.center_momentum = center_momentum
-        self.ncrops = ncrops
         self.register_buffer("center", torch.zeros(1, out_dim))
 
         # Temperature schedule
