@@ -24,8 +24,9 @@ data:
   augmentation:
     color_jitter: 0.4
     grayscale_prob: 0.2
-    gaussian_blur_prob: 0.5
-    solarization_prob: 0.2
+    # [p_first_global, p_second_global, p_local]
+    gaussian_blur_prob: [1.0, 0.1, 0.5]
+    solarization_prob: [0.0, 0.2, 0.0]
     horizontal_flip_prob: 0.5
 
 

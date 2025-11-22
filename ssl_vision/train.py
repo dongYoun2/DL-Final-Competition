@@ -105,9 +105,12 @@ def create_loss(cfg: DictConfig, device: torch.device):
     """Create DINO loss."""
     model_cfg = cfg.model.dino
 
+    # Total number of crops: 2 global crops + N local crops
+    ncrops = 2 + model_cfg.local_crops_number
+
     criterion = DINOLoss(
         out_dim=model_cfg.out_dim,
-        ncrops=2,  # Only 2 views (same image duplicated for speed)
+        ncrops=ncrops,
         warmup_teacher_temp=model_cfg.warmup_teacher_temp,
         teacher_temp=model_cfg.teacher_temp,
         warmup_teacher_temp_epochs=model_cfg.warmup_teacher_temp_epochs,

@@ -28,13 +28,27 @@ class MultiCropTransform:
         local_crops_scale: Tuple[float, float],
         local_crops_number: int,
         global_crops_number: int = 2,
+        global_crops_size: int = 96,
+        local_crops_size: Optional[int] = None,
         color_jitter: float = 0.4,
         grayscale_prob: float = 0.2,
-        gaussian_blur_prob: float = 0.5,
-        solarization_prob: float = 0.2,
+        gaussian_blur_prob: List[float] = None,
+        solarization_prob: List[float] = None,
     ):
         self.global_crops_number = global_crops_number
         self.local_crops_number = local_crops_number
+
+        # If not specified, use same size for local crops as global crops
+        if local_crops_size is None:
+            local_crops_size = global_crops_size
+
+        # Require 3-element list/tuple for per-crop probabilities:
+        # [p_global1, p_global2, p_local]
+
+        assert len(gaussian_blur_prob) == 3, "gaussian_blur_prob must be a list or tuple of length 3: [p_global1, p_global2, p_local]"
+        assert len(solarization_prob) == 3, "solarization_prob must be a list or tuple of length 3: [p_global1, p_global2, p_local]"
+        gb_p_global1, gb_p_global2, gb_p_local = gaussian_blur_prob
+        sol_p_global1, sol_p_global2, sol_p_local = solarization_prob
 
         # Normalization (ImageNet stats)
         normalize = transforms.Normalize(
@@ -44,6 +58,11 @@ class MultiCropTransform:
 
         # Global crop transformation
         self.global_transfo = transforms.Compose([
+            transforms.RandomResizedCrop(
+                global_crops_size,
+                scale=global_crops_scale,
+                interpolation=Image.BICUBIC,
+            ),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
                 [transforms.ColorJitter(
@@ -57,14 +76,20 @@ class MultiCropTransform:
             transforms.RandomGrayscale(p=grayscale_prob),
             transforms.RandomApply(
                 [transforms.GaussianBlur(kernel_size=9, sigma=(0.1, 2.0))],
-                p=gaussian_blur_prob
+                p=gb_p_global1,
             ),
+            transforms.RandomSolarize(threshold=128, p=sol_p_global1),
             transforms.ToTensor(),
             normalize,
         ])
 
         # Add solarization to second global crop
         self.global_transfo2 = transforms.Compose([
+            transforms.RandomResizedCrop(
+                global_crops_size,
+                scale=global_crops_scale,
+                interpolation=Image.BICUBIC,
+            ),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
                 [transforms.ColorJitter(
@@ -78,15 +103,20 @@ class MultiCropTransform:
             transforms.RandomGrayscale(p=grayscale_prob),
             transforms.RandomApply(
                 [transforms.GaussianBlur(kernel_size=9, sigma=(0.1, 2.0))],
-                p=gaussian_blur_prob
+                p=gb_p_global2,
             ),
-            transforms.RandomSolarize(threshold=128, p=solarization_prob),
+            transforms.RandomSolarize(threshold=128, p=sol_p_global2),
             transforms.ToTensor(),
             normalize,
         ])
 
         # Local crop transformation
         self.local_transfo = transforms.Compose([
+            transforms.RandomResizedCrop(
+                local_crops_size,
+                scale=local_crops_scale,
+                interpolation=Image.BICUBIC,
+            ),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
                 [transforms.ColorJitter(
@@ -100,8 +130,9 @@ class MultiCropTransform:
             transforms.RandomGrayscale(p=grayscale_prob),
             transforms.RandomApply(
                 [transforms.GaussianBlur(kernel_size=9, sigma=(0.1, 2.0))],
-                p=gaussian_blur_prob
+                p=gb_p_local,
             ),
+            transforms.RandomSolarize(threshold=128, p=sol_p_local),
             transforms.ToTensor(),
             normalize,
         ])
@@ -362,14 +393,22 @@ def get_transforms(cfg):
 
     if model_name in ['dino_v2', 'dino_v3']:
         # Multi-crop transformation for self-supervised learning
+
+        # Keep all crops at the model input resolution (e.g., 96x96) to satisfy
+        # timm's ViT img_size constraint. "Local" crops are smaller *views*
+        # controlled via `local_crops_scale`, then resized back to `image_size`.
+        local_size = image_size = cfg.model.vit.image_size
+
         transform = MultiCropTransform(
             global_crops_scale=tuple(cfg.model[cfg.model.name.replace('_v2', '').replace('_v3', '')].global_crops_scale),
             local_crops_scale=tuple(cfg.model[cfg.model.name.replace('_v2', '').replace('_v3', '')].local_crops_scale),
             local_crops_number=cfg.model[cfg.model.name.replace('_v2', '').replace('_v3', '')].local_crops_number,
+            global_crops_size=image_size,
+            local_crops_size=local_size,
             color_jitter=cfg.data.augmentation.color_jitter,
             grayscale_prob=cfg.data.augmentation.grayscale_prob,
-            gaussian_blur_prob=cfg.data.augmentation.gaussian_blur_prob,
-            solarization_prob=cfg.data.augmentation.solarization_prob,
+            gaussian_blur_prob=list(cfg.data.augmentation.gaussian_blur_prob),
+            solarization_prob=list(cfg.data.augmentation.solarization_prob),
         )
     else:
         raise ValueError(f"Unknown model: {model_name}")
