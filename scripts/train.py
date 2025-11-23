@@ -14,13 +14,13 @@ from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from data_loader import create_dataloader, get_transforms
-from models import (
+from ssl_vision.data_loader import create_dataloader, get_transforms
+from ssl_vision.models import (
     create_dino_model,
     update_teacher,
     DINOLoss,
 )
-from utils import (
+from ssl_vision.utils import (
     get_cosine_schedule_with_warmup,
     AverageMeter,
 )
@@ -401,6 +401,9 @@ def main(cfg: DictConfig):
 
     student, teacher = create_models(cfg, device)
 
+    optimizer, scheduler = create_optimizer_and_scheduler(cfg, student, train_loader)
+    criterion = create_loss(cfg, device)
+
     # Resume (if needed)
     epoch = 0
     global_step = 0
@@ -432,10 +435,6 @@ def main(cfg: DictConfig):
     # Compile student and teacher
     compiled_student = torch.compile(ddp_student)
     compiled_teacher = torch.compile(teacher)
-
-    optimizer, scheduler = create_optimizer_and_scheduler(cfg, compiled_student, train_loader)
-    criterion = create_loss(cfg, device)
-
 
 
     # Logging (after resume so we have resume_info)

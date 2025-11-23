@@ -14,10 +14,10 @@ from tqdm import tqdm
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, top_k_accuracy_score
-
-from data_loader import HuggingFaceImageDataset
-from models import create_vision_transformer
 from torchvision import transforms
+
+from ssl_vision.data_loader import HuggingFaceImageDataset
+from ssl_vision.models import create_vision_transformer
 
 
 def get_eval_transforms(size=96):

@@ -32,9 +32,11 @@ mkdir -p logs/${SLURM_JOB_NAME}
 
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES}"
 export HYDRA_FULL_ERROR=1
+export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$PYTHONPATH
+
 
 # ViT-Tiny
-# python ssl_vision/eval.py \
+# python scripts/eval.py \
 #     experiment_name=${EXPERIMENT_ID} \
 #     data=cifar10 \
 #     model.vit.image_size=32 \
@@ -45,14 +47,14 @@ export HYDRA_FULL_ERROR=1
 #     evaluation.checkpoint_path=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_13201936/checkpoint_final.pth
 
 # ViT-Small
-python ssl_vision/eval.py \
+python scripts/eval.py \
     experiment_name=${EXPERIMENT_ID} \
-    data=cifar10 \
-    evaluation.checkpoint_path=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_13212150/checkpoint_epoch_120.pth \
+    data=cifar100 \
+    evaluation.checkpoint_path=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13223123/checkpoint_epoch_118.pth \
     # evaluation.linear_probe_epochs=100
 
 # ViT-Base
-# python ssl_vision/eval.py \
+# python scripts/eval.py \
 #     experiment_name=${EXPERIMENT_ID} \
 #     data=cifar10 \
 #     model.vit.embed_dim=768 \

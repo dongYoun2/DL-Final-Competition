@@ -31,8 +31,9 @@ mkdir -p logs/${SLURM_JOB_NAME}
 
 echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 export HYDRA_FULL_ERROR=1
+export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$PYTHONPATH
 
 # ViT-Small (default config)
-torchrun --standalone --nproc_per_node=$SLURM_NTASKS ssl_vision/train.py \
+torchrun --standalone --nproc_per_node=$SLURM_NTASKS scripts/train.py \
   distributed.enabled=true \
   experiment_name=${EXPERIMENT_ID}
