@@ -12,7 +12,7 @@ seed: 42
 
 # Training settings
 training:
-  num_epochs: 200
+  num_epochs: 150
   batch_size: 256 # batch size per GPU
   num_workers: 16
   pin_memory: true
@@ -47,8 +47,8 @@ evaluation:
   results_dir: ./eval_results
 
   # k-NN evaluation
-  knn_k: 20
+  knn_k: 5
 
   # Linear probing
-  linear_probe_epochs: 2000
+  linear_probe_epochs: 1000
   linear_probe_lr: 0.001

@@ -206,25 +206,33 @@ def main(cfg: DictConfig):
 
     print(f"\nLoading checkpoint from: {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    snapped_cfg = OmegaConf.create(checkpoint['config'])
 
     # Create model
     print("Creating model...")
-    backbone = create_vision_transformer(cfg)
+    backbone = create_vision_transformer(snapped_cfg)
 
     # Load weights (handle both full model and backbone-only checkpoints)
     if 'student_state_dict' in checkpoint:
-        # Full training checkpoint
+        # Full training checkpoint from DINO training
         state_dict = checkpoint['student_state_dict']
-        # Extract backbone weights
+
+        # Extract backbone weights; handle wrappers like "_orig_mod.backbone." for torch.compile wrapper (backward compatibility)
         backbone_state_dict = {}
         for k, v in state_dict.items():
-            if k.startswith('backbone.'):
-                backbone_state_dict[k.replace('backbone.', '')] = v
+            if 'backbone.' in k:
+                # keep only the part after "backbone."
+                new_key = k.split('backbone.', 1)[1]
+                backbone_state_dict[new_key] = v
+
+        # If we successfully extracted backbone weights, load those.
+        # Otherwise fall back to loading the full state_dict (for plain ViT checkpoints).
         if backbone_state_dict:
             backbone.load_state_dict(backbone_state_dict)
         else:
             backbone.load_state_dict(state_dict)
     else:
+        # Checkpoint is assumed to be a plain state_dict
         backbone.load_state_dict(checkpoint)
 
     backbone = backbone.to(device)
@@ -297,7 +305,7 @@ def main(cfg: DictConfig):
 
     # k-NN evaluation
 
-    knn_k = cfg.evaluation.get('knn_k', 20)
+    knn_k = cfg.evaluation.get('knn_k', 5)
     knn_top1, knn_top5 = knn_evaluation(
         train_features, train_labels,
         test_features, test_labels,
@@ -340,6 +348,7 @@ def main(cfg: DictConfig):
         f.write(f"Checkpoint: {checkpoint_path}\n")
         f.write(f"Eval Dataset: {cfg.data.dataset_name}\n")
         f.write(f"Number of classes: {num_classes}\n")
+        f.write(f"k-NN k: {knn_k}\n")
         f.write(f"\nResults:\n")
         for key, value in results.items():
             f.write(f"  {key}: {value*100:.2f}%\n")
@@ -349,5 +358,3 @@ def main(cfg: DictConfig):
 
 if __name__ == "__main__":
     main()
-
-
