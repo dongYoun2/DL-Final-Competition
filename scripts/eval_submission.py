@@ -367,7 +367,7 @@ def main(cfg: DictConfig):
     )
 
     # Save k-NN predictions
-    knn_csv_path = results_dir / f"knn_predictions_{cfg.experiment_name}.csv"
+    knn_csv_path = results_dir / f"knn_{cfg.experiment_name}.csv"
     df_knn = pd.DataFrame({
         'id': test_filenames,
         'class_id': test_knn_pred
@@ -399,7 +399,7 @@ def main(cfg: DictConfig):
     test_linear_pred = predict_with_classifier(linear_classifier, test_features, device)
 
     # Save linear predictions
-    linear_csv_path = results_dir / f"linear_predictions_{cfg.experiment_name}.csv"
+    linear_csv_path = results_dir / f"linear_{cfg.experiment_name}.csv"
     df_linear = pd.DataFrame({
         'id': test_filenames,
         'class_id': test_linear_pred

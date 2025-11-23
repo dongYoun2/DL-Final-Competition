@@ -34,8 +34,16 @@ echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES}"
 export HYDRA_FULL_ERROR=1
 export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$PYTHONPATH
 
-# ViT-Small
+CHECKPOINT=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13223123/checkpoint_final.pth
+
+# eval on CUB-200
 python scripts/eval_submission.py --config-name=submission \
-    experiment_name=${EXPERIMENT_ID} \
+    experiment_name=cub200_${EXPERIMENT_ID} \
     data=cub200 \
-    evaluation.checkpoint_path=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13223123/checkpoint_final.pth
+    evaluation.checkpoint_path=${CHECKPOINT}
+
+# eval on mini-ImageNet
+python scripts/eval_submission.py --config-name=submission \
+    experiment_name=mini_imagenet_${EXPERIMENT_ID} \
+    data=mini_imagenet \
+    evaluation.checkpoint_path=${CHECKPOINT}
