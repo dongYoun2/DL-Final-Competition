@@ -15,12 +15,12 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, top_k_accuracy_score
 import pandas as pd
 
-from ssl_vision.data_loader import SubmissionCUBDataset, get_eval_transforms
+from ssl_vision.data_loader import SubmissionDataset, get_eval_transforms
 from ssl_vision.models import create_vision_transformer
 
 
 def submission_collate_fn(batch):
-    """Custom collate function for SubmissionCUBDataset that handles filenames"""
+    """Custom collate function for SubmissionDataset that handles filenames"""
     images = torch.stack([item[0] for item in batch])
     labels = torch.tensor([item[1] for item in batch])
     filenames = [item[2] for item in batch]
@@ -262,21 +262,21 @@ def main(cfg: DictConfig):
     eval_transform = get_eval_transforms()
 
     # Load train split
-    train_dataset = SubmissionCUBDataset(
+    train_dataset = SubmissionDataset(
         root_dir=cfg.data.data_dir,
         split='train',
         transform=eval_transform,
     )
 
     # Load validation split
-    val_dataset = SubmissionCUBDataset(
+    val_dataset = SubmissionDataset(
         root_dir=cfg.data.data_dir,
         split='val',
         transform=eval_transform,
     )
 
     # Load test split
-    test_dataset = SubmissionCUBDataset(
+    test_dataset = SubmissionDataset(
         root_dir=cfg.data.data_dir,
         split='test',
         transform=eval_transform,

@@ -275,7 +275,7 @@ class LocalImageDataset(Dataset):
         return image, label
 
 
-class SubmissionCUBDataset(Dataset):
+class SubmissionDataset(Dataset):
     """
     Dataset for CUB-200 submission data.
 
@@ -315,9 +315,9 @@ class SubmissionCUBDataset(Dataset):
         # For test split, there are no labels
         self.has_labels = split in ['train', 'val']
 
-        print(f"[SubmissionCUBDataset] Loaded {len(self.df)} samples from {split} split")
+        print(f"[SubmissionDataset] Loaded {len(self.df)} samples from {split} split")
         if self.has_labels:
-            print(f"[SubmissionCUBDataset] Number of classes: {self.df['class_id'].nunique()}")
+            print(f"[SubmissionDataset] Number of classes: {self.df['class_id'].nunique()}")
 
     def __len__(self):
         return len(self.df)
@@ -347,10 +347,6 @@ class SubmissionCUBDataset(Dataset):
             label = -1  # Placeholder for test set
 
         return image, label, filename
-
-
-# Keep the old name for backward compatibility
-KaggleCUBDataset = SubmissionCUBDataset
 
 
 def collate_fn(batch):
