@@ -37,5 +37,5 @@ export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$P
 # ViT-Small
 python scripts/eval_submission.py --config-name=submission \
     experiment_name=${EXPERIMENT_ID} \
-    data=submission_cub200 \
+    data=cub200 \
     evaluation.checkpoint_path=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13223123/checkpoint_epoch_102.pth

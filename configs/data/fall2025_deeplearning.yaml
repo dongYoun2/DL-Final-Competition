@@ -3,7 +3,6 @@
 data:
   # Original HuggingFace dataset identifier (kept for reference / optional use)
   dataset_name: tsbpp/fall2025_deeplearning
-  dataset_config: null
   cache_dir: /gpfs/scratch/dl5635/.cache
 
   # Use locally stored images instead of loading from HuggingFace.

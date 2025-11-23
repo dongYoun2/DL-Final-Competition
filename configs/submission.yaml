@@ -1,11 +1,11 @@
 # Evaluation configuration for CUB-200 submission
 defaults:
   - model: dino_v2
-  - data: submission_cub200
+  - data: cub200
   - _self_
 
 # Experiment settings
-experiment_name: submission_cub200
+experiment_name: eval_cub200
 seed: 42
 
 # Training settings (required by config structure, not used during eval)

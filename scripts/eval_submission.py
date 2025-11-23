@@ -256,14 +256,7 @@ def main(cfg: DictConfig):
     backbone = backbone.to(device)
     backbone.eval()
     print(f"Model loaded successfully!")
-
-    # Check dataset configuration
-    if cfg.data.get('dataset_type') != 'submission_cub':
-        print("Error: This script requires dataset_type='submission_cub'")
-        print("Please use configs/data/submission_cub200.yaml")
-        return
-
-    print(f"\nLoading CUB-200 dataset from: {cfg.data.data_dir}")
+    print(f"\nLoading {cfg.data.dataset_name} dataset from: {cfg.data.data_dir}")
 
     # Evaluation transforms
     eval_transform = get_eval_transforms()
