@@ -1,5 +1,5 @@
 """
-Data loading utilities for self-supervised and evaluation pipelines.
+Data loading utilities
 
 Supports:
 - HuggingFace datasets (streaming or cached)
@@ -387,30 +387,38 @@ def create_dataloader(
 
 def get_transforms(cfg):
     """
-    Create transforms based on model configuration
+    Create transforms for DINO v2 self-supervised learning
     """
-    model_name = cfg.model.name
+    # Multi-crop transformation for self-supervised learning
+    # Keep all crops at the model input resolution (e.g., 96x96) to satisfy
+    # timm's ViT img_size constraint. "Local" crops are smaller *views*
+    # controlled via `local_crops_scale`, then resized back to `image_size`.
+    local_size = image_size = cfg.model.vit.image_size
 
-    if model_name in ['dino_v2', 'dino_v3']:
-        # Multi-crop transformation for self-supervised learning
-
-        # Keep all crops at the model input resolution (e.g., 96x96) to satisfy
-        # timm's ViT img_size constraint. "Local" crops are smaller *views*
-        # controlled via `local_crops_scale`, then resized back to `image_size`.
-        local_size = image_size = cfg.model.vit.image_size
-
-        transform = MultiCropTransform(
-            global_crops_scale=tuple(cfg.model[cfg.model.name.replace('_v2', '').replace('_v3', '')].global_crops_scale),
-            local_crops_scale=tuple(cfg.model[cfg.model.name.replace('_v2', '').replace('_v3', '')].local_crops_scale),
-            local_crops_number=cfg.model[cfg.model.name.replace('_v2', '').replace('_v3', '')].local_crops_number,
-            global_crops_size=image_size,
-            local_crops_size=local_size,
-            color_jitter=cfg.data.augmentation.color_jitter,
-            grayscale_prob=cfg.data.augmentation.grayscale_prob,
-            gaussian_blur_prob=list(cfg.data.augmentation.gaussian_blur_prob),
-            solarization_prob=list(cfg.data.augmentation.solarization_prob),
-        )
-    else:
-        raise ValueError(f"Unknown model: {model_name}")
+    transform = MultiCropTransform(
+        global_crops_scale=tuple(cfg.model.dino.global_crops_scale),
+        local_crops_scale=tuple(cfg.model.dino.local_crops_scale),
+        local_crops_number=cfg.model.dino.local_crops_number,
+        global_crops_size=image_size,
+        local_crops_size=local_size,
+        color_jitter=cfg.data.augmentation.color_jitter,
+        grayscale_prob=cfg.data.augmentation.grayscale_prob,
+        gaussian_blur_prob=list(cfg.data.augmentation.gaussian_blur_prob),
+        solarization_prob=list(cfg.data.augmentation.solarization_prob),
+    )
 
     return transform
+
+
+
+def get_eval_transforms():
+    """Simple transforms for evaluation (no augmentation)"""
+    RESIZE_SIZE = 96    # fixed size for the model input
+    return transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Resize(RESIZE_SIZE),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        ),
+    ])

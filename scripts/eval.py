@@ -14,22 +14,10 @@ from tqdm import tqdm
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, top_k_accuracy_score
-from torchvision import transforms
 
-from ssl_vision.data_loader import HuggingFaceImageDataset
+from ssl_vision.data_loader import HuggingFaceImageDataset, get_eval_transforms
 from ssl_vision.models import create_vision_transformer
 
-
-def get_eval_transforms(size=96):
-    """Simple transforms for evaluation (no augmentation)"""
-    return transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Resize(size),
-        transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225]
-        ),
-    ])
 
 
 @torch.no_grad()
