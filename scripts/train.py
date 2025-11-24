@@ -1,6 +1,7 @@
 """
 Main training script for self-supervised learning (DINO)
 """
+import math
 import os
 from pathlib import Path
 from typing import Optional
@@ -115,6 +116,52 @@ def create_loss(cfg: DictConfig, device: torch.device):
     ).to(device)
 
     return criterion
+
+
+def build_teacher_momentum_schedule(cfg: DictConfig, total_steps: int):
+    """
+    Build a cosine schedule for the teacher momentum (EMA) coefficient.
+    Matches the strategy used in DINO: start from a base momentum and
+    asymptotically approach 1.0 over training.
+    """
+    model_cfg = cfg.model.dino
+    base_momentum = getattr(model_cfg, "momentum_teacher", 0.996)
+    final_momentum = getattr(model_cfg, "momentum_teacher_end", 1.0)
+
+    if total_steps <= 0:
+        return [final_momentum]
+
+    denom = max(total_steps - 1, 1)
+    schedule = []
+    for step in range(total_steps):
+        progress = step / denom
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        momentum = final_momentum - (final_momentum - base_momentum) * cosine
+        schedule.append(momentum)
+
+    return schedule
+
+
+def build_weight_decay_schedule(cfg: DictConfig, total_steps: int):
+    """
+    Cosine schedule for AdamW weight decay (student optimizer).
+    """
+    opt_cfg = cfg.optimizer
+    start_wd = getattr(opt_cfg, "weight_decay", 0.0)
+    end_wd = getattr(opt_cfg, "weight_decay_end", start_wd)
+
+    if total_steps <= 0 or start_wd == end_wd:
+        return [start_wd]
+
+    denom = max(total_steps - 1, 1)
+    schedule = []
+    for step in range(total_steps):
+        progress = step / denom
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        weight_decay = end_wd + (start_wd - end_wd) * cosine
+        schedule.append(weight_decay)
+
+    return schedule
 
 
 def setup_logging(cfg: DictConfig, checkpoint_dir: Path, resume_info: Optional[dict] = None):
@@ -261,6 +308,8 @@ def train_one_epoch(
     device: torch.device,
     global_step: int,
     is_main_process: bool,
+    teacher_momentum_schedule,
+    weight_decay_schedule,
 ):
     """Train for one epoch and return (avg_loss, global_step)."""
     student.train()
@@ -302,15 +351,21 @@ def train_one_epoch(
                 cfg.training.gradient_clip,
             )
 
+        # Update weight decay before optimizer step
+        wd_idx = min(global_step, len(weight_decay_schedule) - 1)
+        current_weight_decay = weight_decay_schedule[wd_idx]
+        for param_group in optimizer.param_groups:
+            param_group["weight_decay"] = current_weight_decay
+
         optimizer.step()
 
         # Update learning rate
         scheduler.step()
 
-        # Update teacher
-        momentum = cfg.model.dino.momentum_teacher
+        # Update teacher with scheduled momentum
+        momentum_idx = min(global_step, len(teacher_momentum_schedule) - 1)
         with torch.no_grad():
-            update_teacher(student, teacher, momentum)
+            update_teacher(student, teacher, teacher_momentum_schedule[momentum_idx])
 
         # Update metrics
         loss_meter.update(loss.item())
@@ -399,6 +454,16 @@ def main(cfg: DictConfig):
         world_size=world_size,
     )
 
+    total_training_steps = len(train_loader) * cfg.training.num_epochs
+    teacher_momentum_schedule = build_teacher_momentum_schedule(
+        cfg=cfg,
+        total_steps=total_training_steps,
+    )
+    weight_decay_schedule = build_weight_decay_schedule(
+        cfg=cfg,
+        total_steps=total_training_steps,
+    )
+
     student, teacher = create_models(cfg, device)
 
     optimizer, scheduler = create_optimizer_and_scheduler(cfg, student, train_loader)
@@ -468,6 +533,8 @@ def main(cfg: DictConfig):
             device=device,
             global_step=global_step,
             is_main_process=is_main_process,
+            teacher_momentum_schedule=teacher_momentum_schedule,
+            weight_decay_schedule=weight_decay_schedule,
         )
 
         # Save checkpoint (only on main process)

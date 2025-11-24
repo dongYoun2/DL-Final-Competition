@@ -1,38 +1,74 @@
 """
 Utility functions for training
 """
-import torch
-from torch.optim.lr_scheduler import LambdaLR
 import math
+
+import torch
+from torch.optim.lr_scheduler import _LRScheduler
+
+
+class CosineWithWarmupScheduler(_LRScheduler):
+    """
+    Cosine annealing with linear warmup that treats `min_lr` as an absolute
+    floor. Prevents the LR from collapsing toward zero when `min_lr` is
+    specified in absolute units (e.g., 1e-6).
+    """
+
+    def __init__(
+        self,
+        optimizer,
+        num_warmup_steps: int,
+        num_training_steps: int,
+        min_lr: float = 0.0,
+        last_epoch: int = -1,
+    ):
+        self.num_warmup_steps = max(0, num_warmup_steps)
+        self.num_training_steps = max(num_training_steps, 1)
+        if self.num_warmup_steps > self.num_training_steps:
+            self.num_warmup_steps = self.num_training_steps
+        self.min_lr = min_lr
+        super().__init__(optimizer, last_epoch=last_epoch)
+
+    def get_lr(self):
+        current_step = self.last_epoch
+
+        # Warmup: linearly scale from 0 -> base_lr
+        if current_step < self.num_warmup_steps:
+            warmup_progress = float(current_step + 1) / max(1, self.num_warmup_steps)
+            return [base_lr * warmup_progress for base_lr in self.base_lrs]
+
+        if self.num_training_steps == self.num_warmup_steps:
+            return [self.min_lr for _ in self.base_lrs]
+
+        progress = float(current_step - self.num_warmup_steps) / max(
+            1, self.num_training_steps - self.num_warmup_steps
+        )
+        progress = min(max(progress, 0.0), 1.0)
+        cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
+
+        return [
+            self.min_lr + (base_lr - self.min_lr) * cosine_decay
+            for base_lr in self.base_lrs
+        ]
 
 
 def get_cosine_schedule_with_warmup(
     optimizer,
     num_warmup_steps,
     num_training_steps,
-    num_cycles=0.5,
+    num_cycles=0.5,  # kept for backward compatibility
     min_lr=0.0,
 ):
     """
-    Create a schedule with a learning rate that decreases following the values
-    of the cosine function between the initial lr set in the optimizer to min_lr,
-    after a warmup period during which it increases linearly between 0 and the
-    initial lr set in the optimizer.
+    Create a cosine scheduler with linear warmup that decays from the optimizer's
+    initial LR down to `min_lr`.
     """
-    def lr_lambda(current_step):
-        if current_step < num_warmup_steps:
-            return float(current_step) / float(max(1, num_warmup_steps))
-
-        progress = float(current_step - num_warmup_steps) / float(
-            max(1, num_training_steps - num_warmup_steps)
-        )
-        cosine_lr = 0.5 * (1.0 + math.cos(math.pi * progress))
-
-        # Scale to [min_lr, max_lr]
-        max_lr = 1.0
-        return max(min_lr, cosine_lr * (max_lr - min_lr) + min_lr)
-
-    return LambdaLR(optimizer, lr_lambda)
+    return CosineWithWarmupScheduler(
+        optimizer=optimizer,
+        num_warmup_steps=num_warmup_steps,
+        num_training_steps=num_training_steps,
+        min_lr=min_lr,
+    )
 
 
 class AverageMeter:
