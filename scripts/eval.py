@@ -1,6 +1,6 @@
 """
 Evaluation script for self-supervised models
-Supports linear probing and k-NN evaluation
+Supports linear probing and k-NN evaluation (Evaluation on the CIFAR-10 or CIFAR-100)
 """
 import os
 import torch
@@ -20,6 +20,10 @@ from ssl_vision.models import create_vision_transformer
 
 
 
+# different from the extract_features function in utils.py.
+# This function assumes the dataloader returns a batch of images and labels (no filenames)
+# used for HF CIFAR-10 and CIFAR-100
+# TODO: need to refactor later to be more general (?)
 @torch.no_grad()
 def extract_features(model, dataloader, device):
     """Extract features from a pretrained model"""

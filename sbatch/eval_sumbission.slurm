@@ -34,16 +34,18 @@ echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES}"
 export HYDRA_FULL_ERROR=1
 export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$PYTHONPATH
 
-CHECKPOINT=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13223123/checkpoint_final.pth
+BEST_CKPT_DIR=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13271099/best_cub200
 
-# eval on CUB-200
+# eval on CUB-200 with linear probing
 python scripts/eval_submission.py --config-name=submission \
     experiment_name=cub200_${EXPERIMENT_ID} \
     data=cub200 \
-    evaluation.checkpoint_path=${CHECKPOINT}
+    evaluation.checkpoint_dir=${BEST_CKPT_DIR} \
+    evaluation.linear_probe_epochs=200
 
-# eval on mini-ImageNet
+# eval on mini-ImageNet with linear probing
 python scripts/eval_submission.py --config-name=submission \
     experiment_name=mini_imagenet_${EXPERIMENT_ID} \
     data=mini_imagenet \
-    evaluation.checkpoint_path=${CHECKPOINT}
+    evaluation.checkpoint_dir=${BEST_CKPT_DIR} \
+    evaluation.linear_probe_epochs=200

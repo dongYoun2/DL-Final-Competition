@@ -5,6 +5,10 @@ import math
 
 import torch
 from torch.optim.lr_scheduler import _LRScheduler
+from tqdm import tqdm
+import numpy as np
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score
 
 
 class CosineWithWarmupScheduler(_LRScheduler):
@@ -111,5 +115,58 @@ def accuracy(output, target, topk=(1,)):
         return res
 
 
+@torch.no_grad()
+def extract_features(model, dataloader, device):
+    """
+    Assumes the dataloader returns a batch of images, labels, and filenames
+    """
+    model.eval()
+    all_features = []
+    all_labels = []
+    all_filenames = []
 
+    for batch in tqdm(dataloader, desc="Extracting features"):
+        assert len(batch) == 3, "Dataloader must return a batch of images, labels, and filenames"
+        images, labels, filenames = batch
+        images = images.to(device)
+        features = model(images)
+
+        # Use [CLS] token
+        cls_features = features[:, 0]  # Shape: [B, D]
+
+        all_features.append(cls_features.cpu())
+        all_labels.append(labels.cpu())
+        all_filenames.extend(filenames)
+
+    all_features = torch.cat(all_features, dim=0).numpy()
+    all_labels = torch.cat(all_labels, dim=0).numpy()
+
+    return all_features, all_labels, all_filenames
+
+
+
+class KNNClassifier:
+    def __init__(self, k: int = 20):
+        self.knn = KNeighborsClassifier(n_neighbors=k, metric='cosine', n_jobs=-1)
+
+
+    def normalize_features(self, features):
+        return features / (np.linalg.norm(features, axis=1, keepdims=True) + 1e-8)
+
+
+    def train(self, features, labels):
+        # Normalize features
+        features = self.normalize_features(features)
+        self.knn.fit(features, labels)
+
+
+    def predict(self, features):
+        # Normalize features
+        features = self.normalize_features(features)
+        return self.knn.predict(features)
+
+
+    def evaluate(self, features, labels):
+        pred = self.predict(features)
+        return accuracy_score(labels, pred)
 
