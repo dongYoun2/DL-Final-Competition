@@ -33,7 +33,22 @@ echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 export HYDRA_FULL_ERROR=1
 export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$PYTHONPATH
 
+START_TIME=$(date +%s)
+
 # ViT-Small (default config)
 torchrun --standalone --nproc_per_node=$SLURM_NTASKS scripts/train.py \
   distributed.enabled=true \
   experiment_name=${EXPERIMENT_ID}
+
+# Print training duration
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
+DAYS=$((ELAPSED/86400))
+HOURS=$(((ELAPSED%86400)/3600))
+MINUTES=$(((ELAPSED%3600)/60))
+SECONDS=$((ELAPSED%60))
+
+echo "=================================================="
+echo "Training Duration: ${DAYS}d ${HOURS}h ${MINUTES}m ${SECONDS}s"
+echo "End Time: $(date)"
+echo "=================================================="
