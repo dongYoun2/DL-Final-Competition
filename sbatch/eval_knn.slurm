@@ -36,16 +36,16 @@ export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$P
 CUB200_BEST_CKPT_DIR=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13397059/a_best
 MINI_IMAGE_NET_BEST_CKPT_DIR=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13397059/a_best
 
-# eval on CUB-200 with linear probing
+# eval on CUB-200 with k-NN
 python scripts/eval_submission.py --config-name=submission \
     experiment_name=cub200_${EVAL_EXP_ID} \
-    method=knn \
+    evaluation.method=knn \
     'evaluation/data@evaluation.data.0=cub200' \
     evaluation.checkpoint_dir=${CUB200_BEST_CKPT_DIR} \
 
-# eval on mini-ImageNet with linear probing
+# eval on mini-ImageNet with k-NN
 python scripts/eval_submission.py --config-name=submission \
     experiment_name=mini_imagenet_${EVAL_EXP_ID} \
-    method=knn \
+    evaluation.method=knn \
     'evaluation/data@evaluation.data.0=mini_imagenet' \
     evaluation.checkpoint_dir=${MINI_IMAGE_NET_BEST_CKPT_DIR} \
