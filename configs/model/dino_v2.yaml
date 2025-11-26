@@ -43,8 +43,7 @@ model:
     # Multi-crop settings (balanced for accuracy/runtime)
     global_crops_scale: [0.25, 1.0]
     local_crops_scale: [0.05, 0.4]
-    local_crops_number: 2 # debugging
-    # local_crops_number: 4
+    local_crops_number: 4
 
     # Koleo regularization
     use_koleo: true

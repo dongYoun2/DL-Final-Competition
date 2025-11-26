@@ -35,16 +35,13 @@ distributed:
 # Checkpointing
 checkpoint:
   save_dir: /gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints  # Base directory (experiment_name is appended)
-  save_frequency: 1 # every n epochs (debugging)
-  # save_frequency: 5 # every n epochs
+  save_frequency: 5 # every n epochs
   resume_from: null  # null (fresh start) or full path to checkpoint from previous experiment
 
 early_stopping:
   # Note: With knn_eval_frequency=10, patience=3 means 30 epochs without improvement
-  patience: 2 # debugging
-  # patience: 3
-  min_delta: 0.0001 # debugging
-  # min_delta: 0.003  # at least 0.3%p improvement
+  patience: 3
+  min_delta: 0.003  # at least 0.3%p improvement
 
 # Logging
 logging:
@@ -54,7 +51,6 @@ logging:
 # K-NN Evaluation
 evaluation:
   batch_size: 256
-  knn_eval_frequency: 2 # debugging
-  # knn_eval_frequency: 10
+  knn_eval_frequency: 10
   top_k_models: 5
   knn_k: 20

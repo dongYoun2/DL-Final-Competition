@@ -22,6 +22,10 @@ from ssl_vision.models import create_dino_model, update_teacher, DINOLoss
 from ssl_vision.utils import get_cosine_schedule_with_warmup, AverageMeter, KNNClassifier, extract_features
 
 
+def count_parameters(model: nn.Module) -> int:
+    return sum(p.numel() for p in model.parameters())
+
+
 def create_models(cfg: DictConfig, device: torch.device):
     """Create student and teacher models."""
     model_name = cfg.model.name
@@ -616,6 +620,17 @@ def main(cfg: DictConfig):
 
 
     student, teacher = create_models(cfg, device)
+
+    # Log model parameters
+    if is_main_process:
+        student_params = count_parameters(student)
+        teacher_params = count_parameters(teacher)
+        print(f"\n{'=' * 80}")
+        print("Model Parameters")
+        print(f"{'=' * 80}")
+        print(f"Student model: {student_params:,} parameters")
+        print(f"Teacher model: {teacher_params:,} parameters")
+        print(f"{'=' * 80}\n")
 
     optimizer, scheduler = create_optimizer_and_scheduler(cfg, student, train_loader)
     criterion = create_loss(cfg, device)
