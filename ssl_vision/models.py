@@ -142,6 +142,23 @@ def create_vision_transformer(cfg):
         drop_path_rate=vit_cfg.drop_path_rate,
     )
 
+    # Assert the model is a timm Vision Transformer
+    assert hasattr(model, "blocks"), (
+        "Expected a timm transformer model with `.blocks`, but the model has no `.blocks` attribute. "
+        "Are you sure it comes from timm.create_model(...) ?"
+    )
+
+    # Enable Flash Attention (fused attention) for all attention blocks
+    # This uses PyTorch's scaled_dot_product_attention which can leverage Flash Attention
+    flash_attn_enabled = False
+    for block in model.blocks:
+        if hasattr(block, 'attn') and hasattr(block.attn, 'fused_attn'):
+            block.attn.fused_attn = True
+            flash_attn_enabled = True
+
+    if flash_attn_enabled:
+        print(f"✓ Flash Attention (fused_attn) enabled for {len(model.blocks)} transformer blocks")
+
     # Modify to return all tokens (CLS + patches)
     original_forward = model.forward_features
 

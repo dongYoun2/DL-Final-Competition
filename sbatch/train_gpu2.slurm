@@ -32,6 +32,11 @@ mkdir -p logs/${SLURM_JOB_NAME}
 echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 export HYDRA_FULL_ERROR=1
 export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$PYTHONPATH
+export TIMM_FUSED_ATTN=1  # Enable Flash Attention in timm
+
+export OMP_NUM_THREADS=1
+export OMP_PROC_BIND=CLOSE
+export OMP_SCHEDULE=STATIC
 
 START_TIME=$(date +%s)
 
