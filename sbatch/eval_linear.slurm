@@ -35,6 +35,7 @@ export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$P
 
 CUB200_BEST_CKPT_DIR=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13397059/a_best2
 MINI_IMAGE_NET_BEST_CKPT_DIR=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13397059/a_best2
+SUN397_BEST_CKPT_DIR=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_gpu2_13397059/a_best2
 
 # eval on CUB-200 with linear probing
 python scripts/eval_submission.py --config-name=submission \
@@ -47,3 +48,10 @@ python scripts/eval_submission.py --config-name=submission \
     experiment_name=mini_imagenet_${EVAL_EXP_ID} \
     'evaluation/data@evaluation.data.0=mini_imagenet' \
     evaluation.checkpoint_dir=${MINI_IMAGE_NET_BEST_CKPT_DIR} \
+
+
+# eval on SUN397 with linear probing
+python scripts/eval_submission.py --config-name=submission \
+    experiment_name=sun397_${EVAL_EXP_ID} \
+    'evaluation/data@evaluation.data.0=sun397' \
+    evaluation.checkpoint_dir=${SUN397_BEST_CKPT_DIR}

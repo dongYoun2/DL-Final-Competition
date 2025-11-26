@@ -605,6 +605,7 @@ def main(cfg: DictConfig):
     early_stop_datasets = {
         "cub200": "CUB-200",
         "mini_imagenet": "mini-ImageNet",
+        "sun397": "SUN-397",
     }
     early_stop_enabled = early_patience > 0 and bool(eval_dataloaders)
     best_avg_knn = None
@@ -752,7 +753,7 @@ def main(cfg: DictConfig):
             avg_knn_acc = None
             if tracked_accs and not missing_datasets:
                 avg_knn_acc = float(np.mean(tracked_accs))
-                print(f"  Avg (CUB-200 + mini-ImageNet): {avg_knn_acc * 100:.2f}%")
+                print(f"  Avg (CUB-200 + mini-ImageNet + SUN-397): {avg_knn_acc * 100:.2f}%")
             elif early_stop_enabled and missing_datasets:
                 missing_str = ", ".join(missing_datasets)
                 print(f"[EarlyStopping] Missing datasets for average: {missing_str}. Skipping update.")

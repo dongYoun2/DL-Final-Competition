@@ -6,6 +6,7 @@ defaults:
   - scheduler: cosine
   - evaluation/data@evaluation.data.0: cub200
   - evaluation/data@evaluation.data.1: mini_imagenet
+  - evaluation/data@evaluation.data.2: sun397
   - _self_
 
 # Experiment settings
