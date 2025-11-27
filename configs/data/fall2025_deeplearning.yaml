@@ -12,12 +12,11 @@ data:
   image_size: 96  # Native resolution 96x96 - DO NOT CHANGE per competition rules
 
   # Data augmentation for SSL
-  augmentation:
-    color_jitter: 0.4
-    grayscale_prob: 0.2
-    # [p_first_global, p_second_global, p_local]
-    gaussian_blur_prob: [1.0, 0.1, 0.5]
-    solarization_prob: [0.0, 0.2, 0.0]
-    horizontal_flip_prob: 0.5
-
-
+  # backward compatibility with previous config
+  # augmentation:
+  #   color_jitter: 0.4
+  #   grayscale_prob: 0.2
+  #   # [p_first_global, p_second_global, p_local]
+  #   gaussian_blur_prob: [1.0, 0.1, 0.5]
+  #   solarization_prob: [0.0, 0.2, 0.0]
+  #   horizontal_flip_prob: 0.5

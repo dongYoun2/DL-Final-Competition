@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 import pandas as pd
 
+from omegaconf import DictConfig
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 import torch
@@ -17,6 +18,106 @@ from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
 from torchvision import transforms
 from datasets import load_dataset
+
+
+
+
+class MutliCropTransformV2:
+    def __init__(
+        self,
+        local_crop_num: int,
+        horizontal_flip_prob: float,
+        global_cfg1: DictConfig,
+        global_cfg2: DictConfig,
+        local_small_cfg: DictConfig,
+        local_large_cfg: DictConfig,
+    ):
+        self.img_size = 96 # fixed (cropping is done by rescaling. same effect.)
+        self.local_crop_num = local_crop_num
+        self.horizontal_flip_prob = horizontal_flip_prob
+
+        # gaussian blur config
+        self.blur_kernel_size = 9
+        self.blur_sigma = (0.1, 2.0)
+
+        # solarization config
+        self.solar_thres = 128
+
+        self.global_transfo1 = self.init_transform(global_cfg1)
+        self.global_transfo2 = self.init_transform(global_cfg2)
+        self.local_sm_transfo = self.init_transform(local_small_cfg)
+        self.local_lg_transfo = self.init_transform(local_large_cfg)
+
+
+    def init_transform(self, cfg: DictConfig):
+        """
+        cfg: transform config
+        """
+
+        # Normalization (ImageNet stats)
+        normalize = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+
+        transfo_list = [
+            transforms.RandomResizedCrop(
+                self.img_size,
+                scale=cfg.scale,
+                interpolation=Image.BICUBIC,
+            ),
+            transforms.RandomHorizontalFlip(p=self.horizontal_flip_prob),
+            transforms.RandomApply(
+                [transforms.ColorJitter(
+                    brightness=cfg.color_jitter,
+                    contrast=cfg.color_jitter,
+                    saturation=cfg.color_jitter,
+                    hue=cfg.color_jitter / 4
+                )],
+                p=cfg.color_jitter_prob
+            ),
+            transforms.RandomGrayscale(p=cfg.grayscale_prob),
+            transforms.RandomApply(
+                [transforms.GaussianBlur(kernel_size=self.blur_kernel_size, sigma=self.blur_sigma)],
+                p=cfg.blur_prob,
+            ),
+            transforms.RandomSolarize(threshold=self.solar_thres, p=cfg.solarization_prob),
+            transforms.ToTensor(),
+            normalize,
+        ]
+
+        # Add RandomErasing if specified in config
+        if hasattr(cfg, 'random_erasing'):
+            re_cfg = cfg.random_erasing
+            transfo_list.append(
+                transforms.RandomErasing(
+                    p=re_cfg.p,
+                    scale=tuple(re_cfg.scale),
+                    ratio=tuple(re_cfg.ratio),
+                    value='random'
+                )
+            )
+
+        transfo = transforms.Compose(transfo_list)
+
+        return transfo
+
+
+    def __call__(self, image):
+        crops = []
+        # Global crops
+        crops.append(self.global_transfo1(image))
+        crops.append(self.global_transfo2(image))
+
+        # Local crops
+        n_small = self.local_crop_num // 2
+        n_large = self.local_crop_num - n_small
+        for _ in range(n_small):
+            crops.append(self.local_sm_transfo(image))
+        for _ in range(n_large):
+            crops.append(self.local_lg_transfo(image))
+
+        return crops
 
 
 class MultiCropTransform:
@@ -448,23 +549,35 @@ def get_transforms(cfg):
     """
     Create transforms for DINO v2 self-supervised learning
     """
-    # Multi-crop transformation for self-supervised learning
-    # Keep all crops at the model input resolution (e.g., 96x96) to satisfy
-    # timm's ViT img_size constraint. "Local" crops are smaller *views*
-    # controlled via `local_crops_scale`, then resized back to `image_size`.
-    local_size = image_size = cfg.model.vit.image_size
+    dino_cfg = cfg.model.dino
+    if hasattr(dino_cfg, 'multi_crop_augmentation'):
+        multi_crop_cfg = dino_cfg.multi_crop_augmentation
+        transform = MutliCropTransformV2(
+            local_crop_num=multi_crop_cfg.local_crops_number,
+            horizontal_flip_prob=multi_crop_cfg.horizontal_flip_prob,
+            global_cfg1=multi_crop_cfg.global_first,
+            global_cfg2=multi_crop_cfg.global_second,
+            local_small_cfg=multi_crop_cfg.local_small,
+            local_large_cfg=multi_crop_cfg.local_large,
+        )
+    else: # default to previous config (backward compatibility)
+        # Multi-crop transformation for self-supervised learning
+        # Keep all crops at the model input resolution (e.g., 96x96) to satisfy
+        # timm's ViT img_size constraint. "Local" crops are smaller *views*
+        # controlled via `local_crops_scale`, then resized back to `image_size`.
+        local_size = image_size = cfg.model.vit.image_size
 
-    transform = MultiCropTransform(
-        global_crops_scale=tuple(cfg.model.dino.global_crops_scale),
-        local_crops_scale=tuple(cfg.model.dino.local_crops_scale),
-        local_crops_number=cfg.model.dino.local_crops_number,
-        global_crops_size=image_size,
-        local_crops_size=local_size,
-        color_jitter=cfg.data.augmentation.color_jitter,
-        grayscale_prob=cfg.data.augmentation.grayscale_prob,
-        gaussian_blur_prob=list(cfg.data.augmentation.gaussian_blur_prob),
-        solarization_prob=list(cfg.data.augmentation.solarization_prob),
-    )
+        transform = MultiCropTransform(
+            global_crops_scale=tuple(dino_cfg.global_crops_scale),
+            local_crops_scale=tuple(dino_cfg.local_crops_scale),
+            local_crops_number=dino_cfg.local_crops_number,
+            global_crops_size=image_size,
+            local_crops_size=local_size,
+            color_jitter=cfg.data.augmentation.color_jitter,
+            grayscale_prob=cfg.data.augmentation.grayscale_prob,
+            gaussian_blur_prob=list(cfg.data.augmentation.gaussian_blur_prob),
+            solarization_prob=list(cfg.data.augmentation.solarization_prob),
+        )
 
     return transform
 
