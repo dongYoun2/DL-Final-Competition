@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=a100_short
 #SBATCH --nodes=1
-#SBATCH --tasks-per-node=2 # 1 task (process) per GPU
-#SBATCH --cpus-per-task=16   # 32 logical CPUs (2 * 16)
-#SBATCH --time=2-00:00:00
+#SBATCH --tasks-per-node=1    # no need to set to 2 since using torchrun
+#SBATCH --cpus-per-task=16  # DataLoader in each process gets 8 num_workers (curernt setting) -> 8 * 2 (worker processes) + 2 (main processes) = 18
+#SBATCH --time=2-10:00:00
 #SBATCH --mem=256GB
 #SBATCH --gres=gpu:2
 #SBATCH --job-name=train_gpu2
@@ -16,9 +16,11 @@ TRAIN_EXP_ID=${SLURM_JOB_ID}
 
 
 echo "=================================================="
+echo "Training Experiment ID: ${TRAIN_EXP_ID}"
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Job Name: ${SLURM_JOB_NAME}"
-echo "Training Experiment ID: ${TRAIN_EXP_ID}"
+echo "SLURM_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK"
+echo "SLURM_NTASKS=$SLURM_NTASKS"
 echo "Start Time: $(date)"
 echo "=================================================="
 
@@ -33,17 +35,25 @@ echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 export HYDRA_FULL_ERROR=1
 export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$PYTHONPATH
 export TIMM_FUSED_ATTN=1  # Enable Flash Attention in timm
-
-export OMP_NUM_THREADS=1
-export OMP_PROC_BIND=CLOSE
-export OMP_SCHEDULE=STATIC
+export TORCHRUN_PROC_NUM=2
 
 START_TIME=$(date +%s)
 
 # ViT-Small (default config)
-torchrun --standalone --nproc_per_node=$SLURM_NTASKS scripts/train.py \
+# torchrun --standalone --nproc_per_node=${TORCHRUN_PROC_NUM} scripts/train.py \
+#   distributed.enabled=true \
+#   experiment_name=${TRAIN_EXP_ID}
+
+# ViT-Base (global batch size = 256, 768 dim)
+torchrun --standalone --nproc_per_node=${TORCHRUN_PROC_NUM} scripts/train.py \
   distributed.enabled=true \
-  experiment_name=${TRAIN_EXP_ID}
+  experiment_name=${TRAIN_EXP_ID} \
+  model.vit.embed_dim=768 \
+  model.vit.depth=12 \
+  model.vit.num_heads=12 \
+  training.batch_size=192 \
+  training.num_epochs=200
+
 
 # Print training duration
 END_TIME=$(date +%s)

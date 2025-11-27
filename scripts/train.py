@@ -479,6 +479,14 @@ def train_one_epoch(
 
 @hydra.main(version_base=None, config_path="../configs", config_name="train")
 def main(cfg: DictConfig):
+    # for debugging CPU affinity-----------------------------------
+    print("PID:", os.getpid())
+    if hasattr(os, "sched_getaffinity"):
+        aff = os.sched_getaffinity(0)
+        print("Affinity:", aff)
+        print("Visible CPUs:", len(aff))
+    print("-" * 80)
+
     """Main entry point (procedural training loop, no Trainer class)."""
     # ------------------------------------------------------------------
     # Distributed setup
@@ -563,7 +571,6 @@ def main(cfg: DictConfig):
     for idx, eval_data_cfg in enumerate(eval_data_list):
         dataset_name = eval_data_cfg.dataset_name
         print(f"Loading evaluation dataset [{idx}]: {dataset_name}")
-        print(f"  Config: {eval_data_cfg}")
         train_split = getattr(eval_data_cfg, "train_split", "train")
         val_split = getattr(eval_data_cfg, "val_split", "val")
 

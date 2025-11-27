@@ -4,7 +4,7 @@
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=2-00:00:00
-#SBATCH --mem=256GB
+#SBATCH --mem=128GB
 #SBATCH --gres=gpu:1
 #SBATCH --job-name=train_single_gpu
 #SBATCH --mail-type=ALL
@@ -16,9 +16,11 @@ TRAIN_EXP_ID=${SLURM_JOB_ID}
 
 
 echo "=================================================="
+echo "Training Experiment ID: ${TRAIN_EXP_ID}"
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Job Name: ${SLURM_JOB_NAME}"
-echo "Training Experiment ID: ${TRAIN_EXP_ID}"
+echo "SLURM_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK"
+echo "SLURM_NTASKS=$SLURM_NTASKS"
 echo "Start Time: $(date)"
 echo "=================================================="
 
@@ -34,18 +36,17 @@ export HYDRA_FULL_ERROR=1
 export PYTHONPATH=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition:$PYTHONPATH
 export TIMM_FUSED_ATTN=1  # Enable Flash Attention in timm
 
-export OMP_NUM_THREADS=1
-export OMP_PROC_BIND=CLOSE
-export OMP_SCHEDULE=STATIC
 
 # ViT-Small
 python scripts/train.py \
-    experiment_name=${TRAIN_EXP_ID} \
-    # checkpoint.resume_from=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_13205191/checkpoint_epoch_60.pth
+    # checkpoint.resume_from=/gpfs/data/fieremanslab/dayne/projects/DL-Final-Competition/checkpoints/train_dino_v2_13205191/checkpoint_epoch_60.pth \
+    training.num_workers=16 \
+    experiment_name=${TRAIN_EXP_ID}
 
 # ViT-Base
 # python scripts/train.py \
 #     experiment_name=${TRAIN_EXP_ID} \
+#     training.num_workers=16 \
 #     model.vit.embed_dim=768 \
 #     model.vit.depth=12 \
 #     model.vit.num_heads=12
