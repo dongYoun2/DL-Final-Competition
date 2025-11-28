@@ -2,9 +2,9 @@
 #SBATCH --partition=cpu_short
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=8
 #SBATCH --time=00-12:00:00
-#SBATCH --mem=16GB
+#SBATCH --mem=64GB
 #SBATCH --job-name=jupyter
 #SBATCH --output=logs/%x/%j.log
 

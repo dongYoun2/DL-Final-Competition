@@ -1,16 +1,21 @@
 # DL-Final-Competition
 
 
-Downloading subset of Open Images Dataset (validation and test are use for SSL training)
+Downloading subset of Open Images train Dataset
 
 ```bash
-# From the project root directory
-curl -L -O https://storage.googleapis.com/openimages/2018_04/validation/validation-images-with-rotation.csv
-curl -L -O https://storage.googleapis.com/openimages/2018_04/test/test-images-with-rotation.csv
+cd data/Open_Images
+curl -L -O https://storage.googleapis.com/openimages/v7/oidv7-class-descriptions.csv
+curl -L -O https://storage.googleapis.com/openimages/v7/oidv7-train-annotations-human-imagelabels.csv
+curl -L -O https://storage.googleapis.com/openimages/v6/oidv6-train-images-with-labels-with-rotation.csv
 
-python scripts/generate_open_images_file.py
+# Run all cells in the notebook/open_images_analysis.ipynb from the PROJECT ROOT
 
-python scripts/download_open_images.py data/open_images_image_list.txt  --download_folder=data/Open_Images --num_processes=5
+# cd to the POJECT ROOT and run the following commands
+# sample size should be a multiple of 1000
+python scripts/sample_open_images.py --sample-size=200000
+
+python scripts/download_open_images.py data/Open_Images/train_sampled_200k.txt  --download_folder=data/Open_Images/train/raw --num_processes=5
 
 # or on HPC Cluster
 sbatch sbatch/download_open_images.slurm
